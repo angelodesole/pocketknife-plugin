@@ -15,4 +15,5 @@ jobs:
           python-version: "3.9"
       - run: pip install ruff pytest
       - run: ruff check .
-      - run: pytest || [ $? -eq 5 ]  # exit 5 = no tests collected yet
+      - run: ruff format --check .
+      - run: pytest

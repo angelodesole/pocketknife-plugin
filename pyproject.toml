@@ -12,7 +12,16 @@ src = ["src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "D", "B", "UP"]
-ignore = ["N802"]  # Rhino command entry points use RhinoCommon naming.
+ignore = [
+    "N802",  # RhinoCommon naming in overrides.
+    "N813",  # `import Rhino.Geometry as rg` is the Rhino convention.
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+# Prototypes add ../src to sys.path before importing; file names are command names.
+"sandbox/*" = ["E402", "N999"]
+"commands/*" = ["E402", "N999"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

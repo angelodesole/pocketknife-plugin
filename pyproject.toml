@@ -1,0 +1,22 @@
+[project]
+name = "pocketknife"
+version = "0.1.0"
+description = "Pocket Knife: Rhino 8 commands and Grasshopper components in pure Python."
+license = "MIT"
+requires-python = ">=3.9"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "D", "B", "UP"]
+ignore = ["N802"]  # Rhino command entry points use RhinoCommon naming.
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

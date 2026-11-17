@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+# Rhino Script Editor build output
+project/build/
+*.rhp
+*.gha
+*.yak
+*.3dmbak
+*.rhl
+.DS_Store
+Thumbs.db

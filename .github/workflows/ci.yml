@@ -10,10 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"
-      - run: pip install ruff pytest
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: pytest
+      - uses: astral-sh/setup-uv@v6
+      # Rhino 8 embeds CPython 3.9.10: test the pure-Python code on 3.9.
+      - run: uvx ruff check .
+      - run: uvx ruff format --check .
+      - run: uv run --no-project --python 3.9 --with pytest pytest

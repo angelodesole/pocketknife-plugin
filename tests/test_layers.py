@@ -64,3 +64,17 @@ def test_unique_copy_name():
 def test_unknown_mode():
     with pytest.raises(ValueError):
         plan_targets([], PARENTS, "Bad")
+
+
+def test_parent_no_keeps_children_inside_full_parent_copy():
+    # Reported bug: parent and children all selected with Parent=No.
+    plan = plan_targets(["Layer2", "Layer3", "Layer4"], PARENTS, PARENT_NO)
+    assert plan["Layer2"] == ("Layer2", [])
+    assert plan["Layer3"] == ("Layer2", ["Layer3"])
+    assert plan["Layer4"] == ("Layer2", ["Layer4"])
+
+
+def test_full_ancestor_with_empty_layer_between():
+    plan = plan_targets(["Layer1", "Layer3"], PARENTS, PARENT_MIN)
+    assert plan["Layer1"] == ("Layer1", [])
+    assert plan["Layer3"] == ("Layer1", ["Layer2", "Layer3"])

@@ -36,6 +36,10 @@ def plan_targets(
 
     Without an empty ancestor, ``Min`` and ``Max`` fall back to ``No``.
 
+    A full layer below another full layer always goes inside the copy of its
+    topmost full ancestor, with its original name, so the copied structure
+    stays one tree in every mode.
+
     Args:
         full_layers: Layers holding selected objects.
         parents: Parent of each layer (``None`` for root layers).
@@ -54,8 +58,16 @@ def plan_targets(
         raise ValueError(f"Unknown mode: {mode}")
     full = set(full_layers)
     plan: dict[K, tuple[K, list[K]]] = {}
+    nested: list[tuple[K, K, list[K]]] = []
     for layer in full:
         chain_up = ancestors(layer, parents)
+        full_above = [a for a in chain_up if a in full]
+        if full_above:
+            # Keep the copy a single tree: follow the topmost full ancestor.
+            top = full_above[-1]
+            below = list(reversed(chain_up[: chain_up.index(top)])) + [layer]
+            nested.append((layer, top, below))
+            continue
         empty = [a for a in chain_up if a not in full]
         if mode == PARENT_NO or not empty:
             plan[layer] = (layer, [])
@@ -63,6 +75,9 @@ def plan_targets(
         anchor = empty[0] if mode == PARENT_MIN else empty[-1]
         below = chain_up[: chain_up.index(anchor)]
         plan[layer] = (anchor, list(reversed(below)) + [layer])
+    for layer, top, below in nested:
+        anchor, chain = plan[top]
+        plan[layer] = (anchor, chain + below)
     return plan
 
 

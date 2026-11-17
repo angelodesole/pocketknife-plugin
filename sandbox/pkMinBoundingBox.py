@@ -23,9 +23,48 @@ import Rhino
 import Rhino.Geometry as rg
 import scriptcontext as sc
 
-from pocketknife.geometry3d import min_bounding_box
+from pocketknife.geometry3d import CancelledError, estimated_cost, min_bounding_box
 from pocketknife.rhinoui import get_objects_with_options
 from pocketknife.rhinoutil import object_points, to_xyz
+
+# Above this estimated cost (about 10 s on a typical PC) the user is warned.
+SLOW_COST = 5_000_000
+
+
+def compute_box(points, accuracy, label):
+    """Runs ``min_bounding_box`` with a status-bar progress meter.
+
+    Shows a warning first when the computation is expected to be slow.
+    Pressing Esc stops the computation.
+
+    Args:
+        points: Points as ``(x, y, z)`` tuples.
+        accuracy: ``"Fast"``, ``"Normal"`` or ``"Precise"``.
+        label: Text shown next to the progress meter.
+
+    Returns:
+        The ``Box3D``.
+
+    Raises:
+        CancelledError: If the user pressed Esc.
+    """
+    if estimated_cost(len(points), accuracy) > SLOW_COST:
+        print(
+            f"pkMinBoundingBox: {len(points)} points with Accuracy={accuracy}, "
+            "this may take a while... (Esc to cancel, Accuracy=Fast is quicker)"
+        )
+    Rhino.UI.StatusBar.ShowProgressMeter(0, 100, label, True, True)
+    Rhino.RhinoApp.Wait()
+
+    def progress(fraction):
+        Rhino.UI.StatusBar.UpdateProgressMeter(int(fraction * 100), True)
+        Rhino.RhinoApp.Wait()
+        return not sc.escape_test(False)
+
+    try:
+        return min_bounding_box(points, accuracy, progress)
+    finally:
+        Rhino.UI.StatusBar.HideProgressMeter()
 
 
 def box_to_rhino(box, tolerance):
@@ -62,7 +101,7 @@ def main():
     doc = sc.doc
     picked = get_objects_with_options(
         "Select objects",
-        {"Accuracy": ("Normal", "Fast", "Precise"), "Group": ("No", "Yes")},
+        {"Accuracy": ("Normal", "Fast", "Precise"), "Group": ("Yes", "No")},
         "pkMinBoundingBox",
     )
     if picked is None:
@@ -72,13 +111,18 @@ def main():
     tolerance = doc.ModelAbsoluteTolerance
     sets = [objects] if values["Group"] == "Yes" else [[obj] for obj in objects]
     added = []
-    for group in sets:
+    for number, group in enumerate(sets, start=1):
         points = []
         for obj in group:
             points += object_points(obj, tolerance)
         if not points:
             continue
-        box = min_bounding_box(to_xyz(points), values["Accuracy"])
+        label = f"pkMinBoundingBox {number}/{len(sets)}"
+        try:
+            box = compute_box(to_xyz(points), values["Accuracy"], label)
+        except CancelledError:
+            print("pkMinBoundingBox: cancelled.")
+            break
         geometry = box_to_rhino(box, tolerance)
         if isinstance(geometry, rg.Brep):
             added.append(doc.Objects.AddBrep(geometry))

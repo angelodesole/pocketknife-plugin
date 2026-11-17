@@ -6,7 +6,7 @@ Vectors and points are ``(x, y, z)`` tuples.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import NamedTuple
 
 from pocketknife.geometry2d import min_bounding_rect
@@ -144,7 +144,29 @@ def _rotate(v: Vec3, axis: Vec3, angle: float) -> Vec3:
     return _unit(tuple(v[k] * c + cr[k] * s + axis[k] * d for k in range(3)))
 
 
-def min_bounding_box(points: Sequence[Vec3], accuracy: str = "Normal") -> Box3D:
+class CancelledError(Exception):
+    """Raised when the progress callback asks to stop."""
+
+
+def estimated_cost(point_count: int, accuracy: str = "Normal") -> int:
+    """Rough work estimate of ``min_bounding_box`` (points x evaluations).
+
+    Args:
+        point_count: Number of input points.
+        accuracy: ``"Fast"``, ``"Normal"`` or ``"Precise"``.
+
+    Returns:
+        A unitless number, useful to warn before long computations.
+    """
+    samples = ACCURACY_SAMPLES.get(accuracy, ACCURACY_SAMPLES["Normal"])
+    return point_count * (samples + 150)
+
+
+def min_bounding_box(
+    points: Sequence[Vec3],
+    accuracy: str = "Normal",
+    progress: Callable[[float], bool] | None = None,
+) -> Box3D:
     """Approximates the minimum-volume oriented bounding box.
 
     Candidate box Z directions (world axes, principal axes and a uniform
@@ -154,12 +176,15 @@ def min_bounding_box(points: Sequence[Vec3], accuracy: str = "Normal") -> Box3D:
     Args:
         points: Input points, at least one.
         accuracy: ``"Fast"``, ``"Normal"`` or ``"Precise"``.
+        progress: Optional callback receiving the completed fraction (0-1);
+            returning False stops the computation.
 
     Returns:
         The best box found. Ties on volume (flat inputs) are broken by area.
 
     Raises:
         ValueError: If ``points`` is empty.
+        CancelledError: If ``progress`` returned False.
     """
     pts = list(set(points))
     if not pts:
@@ -170,8 +195,18 @@ def min_bounding_box(points: Sequence[Vec3], accuracy: str = "Normal") -> Box3D:
         candidates += principal_axes(pts)
     candidates += _fibonacci_hemisphere(samples)
 
-    best = min((box_for_direction(pts, w) for w in candidates), key=_score)
-    step = math.sqrt(2.0 * math.pi / samples)
+    def report(fraction: float) -> None:
+        if progress is not None and progress(min(fraction, 1.0)) is False:
+            raise CancelledError()
+
+    best = box_for_direction(pts, candidates[0])
+    for i, w in enumerate(candidates[1:], start=1):
+        box = box_for_direction(pts, w)
+        if _score(box) < _score(best):
+            best = box
+        if i % 10 == 0:
+            report(0.8 * i / len(candidates))
+    step = step0 = math.sqrt(2.0 * math.pi / samples)
     while step > 1e-5:
         w = best.axes[2]
         a, b = _perpendicular_frame(w)
@@ -188,4 +223,6 @@ def min_bounding_box(points: Sequence[Vec3], accuracy: str = "Normal") -> Box3D:
                     best, improved = box, True
         if not improved:
             step /= 2.0
+            report(0.8 + 0.2 * (1.0 - math.log(step / 1e-5) / math.log(step0 / 1e-5)))
+    report(1.0)
     return best

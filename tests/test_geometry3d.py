@@ -5,7 +5,7 @@ import random
 
 import pytest
 
-from pocketknife.geometry3d import min_bounding_box
+from pocketknife.geometry3d import CancelledError, min_bounding_box
 
 
 def _rotate(p, ax, ay, az):
@@ -37,3 +37,12 @@ def test_flat_input_has_zero_volume():
 def test_empty_input_raises():
     with pytest.raises(ValueError):
         min_bounding_box([])
+
+
+def test_progress_reports_and_cancels():
+    pts = [(x, y, z) for x in (0, 1) for y in (0, 2) for z in (0, 3)]
+    seen = []
+    min_bounding_box(pts, "Fast", progress=lambda f: seen.append(f) or True)
+    assert seen and seen[-1] == 1.0
+    with pytest.raises(CancelledError):
+        min_bounding_box(pts, "Fast", progress=lambda f: False)

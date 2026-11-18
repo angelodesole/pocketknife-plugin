@@ -1,3 +1,5 @@
+<img src="icons/svg/pocketknife-logo.svg" width="96" align="right" alt="">
+
 # Pocket Knife
 
 Free, open-source plug-in for **Rhino 8** that adds a set of `pk*` commands and

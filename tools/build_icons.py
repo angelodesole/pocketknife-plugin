@@ -7,7 +7,8 @@ the element produced or changed by the command in the color of its category
 Usage:
     python tools/build_icons.py
 
-Requires ``cairosvg`` for the PNG export (``pip install cairosvg``).
+Requires ``cairosvg`` (PNG export) and ``shapely`` (favicon boolean
+operations): ``pip install cairosvg shapely``.
 """
 
 from __future__ import annotations
@@ -233,20 +234,67 @@ def plugin_logo() -> str:
 
 
 def site_favicon() -> str:
-    """Favicon for the project site, in the extrdd.com mood.
+    """Favicon for the project site: the plug-in logo reduced to flat black and white.
 
-    Flat ink disc (like the extrdd.com mark) cut by a blade-shaped slit, with
-    automatic dark mode.
+    Same knife as the logo, without shading, in the extrdd.com colors (ink
+    ``#1C1C1A`` on paper ``#F5F5F0``) and with automatic dark mode. A paper
+    transparent gap separates blade and handle so they stay distinct at 16 px,
+    and the pivot is a transparent hole: no halo on any tab color.
     """
+    # The shapes are subtracted here (shapely), so the SVG is plain filled
+    # paths: the gap and the pivot hole are truly transparent and every
+    # renderer draws them the same way (no masks or clip paths).
+    from shapely import affinity
+    from shapely.geometry import Point, Polygon, box
+
+    def quad(p0, p1, p2, steps=24):
+        return [
+            (
+                (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0],
+                (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1],
+            )
+            for t in (i / steps for i in range(1, steps + 1))
+        ]
+
+    def capsule(x, y, w, h):
+        r = h / 2.0
+        return (
+            box(x + r, y, x + w - r, y + h)
+            .union(Point(x + r, y + r).buffer(r, 64))
+            .union(Point(x + w - r, y + r).buffer(r, 64))
+        )
+
+    # Same blade as the logo, in the blade frame, then moved to the knife frame.
+    outline = [(0, -20), (150, -20)]
+    outline += quad((150, -20), (176, -18), (184, -2))
+    outline += quad((184, -2), (140, 30), (58, 30))
+    outline += [(0, 30)]
+    blade = affinity.translate(
+        affinity.rotate(Polygon(outline), -40, origin=(0, 0)), 52, 170
+    )
+    handle = capsule(16, 136, 224, 68)
+    blade = blade.difference(handle.buffer(12, 64))
+    handle = handle.difference(Point(52, 170).buffer(14, 64))
+    knife = affinity.translate(
+        affinity.rotate(blade.union(handle), -24, origin=(128, 150)), 0, -22
+    )
+
+    def ring_path(coords):
+        pts = list(coords)
+        head = f"M{pts[0][0]:.1f} {pts[0][1]:.1f}"
+        return head + "".join(f"L{x:.1f} {y:.1f}" for x, y in pts[1:]) + "Z"
+
+    parts = getattr(knife, "geoms", [knife])
+    d = "".join(
+        ring_path(poly.exterior.coords)
+        + "".join(ring_path(hole.coords) for hole in poly.interiors)
+        for poly in parts
+    )
     return (
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
-        "<style>.ink{fill:#1C1C1A}.paper{fill:#F5F5F0}"
-        "@media (prefers-color-scheme:dark){.ink{fill:#F2F2EC}.paper{fill:#1C1C1A}}"
-        "</style>"
-        '<circle class="ink" cx="16" cy="16" r="11"/>'
-        '<path class="paper" d="M11.2 21.6 L21.6 9.2 C23.2 7.4 25.6 7.9 24.6 10.4 '
-        'C22.4 15.6 18.4 19.8 13.4 23.4 Z"/>'
-        '<circle class="ink" cx="12.4" cy="22.4" r="1.6"/>'
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 -4 236 236">'
+        "<style>.ink{fill:#1C1C1A}"
+        "@media (prefers-color-scheme:dark){.ink{fill:#F2F2EC}}</style>"
+        f'<path class="ink" fill-rule="evenodd" d="{d}"/>'
         "</svg>\n"
     )
 

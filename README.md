@@ -10,12 +10,12 @@ embedded in Rhino 8).
 
 | Command | Description | Grasshopper |
 |---|---|---|
-| `pkLayerColorFromMaterial` | Set layer color from the diffuse color of the layer material. | – |
-| `pkCopyToLayerCopy` | Copy or cut objects into a mirrored "Copy" layer structure. | – |
-| `pkInnerPoint` | Point always inside a geometry (pole of inaccessibility on XY). | ✓ |
-| `pkMinBoundingBox` | Minimum-volume oriented bounding box. | ✓ |
-| `pkMinBoundingRect` | Minimum-area bounding rectangle on XY. | ✓ |
-| `pkOrientToMinRect` | Rotate objects so their min rectangle aligns to X or Y. | ✓ |
+| [`pkLayerColorFromMaterial`](docs/commands/pkLayerColorFromMaterial.md) | Set layer color from the diffuse color of the layer material. | – |
+| [`pkCopyToLayerCopy`](docs/commands/pkCopyToLayerCopy.md) | Copy or cut objects into a mirrored "Copy" layer structure. | – |
+| [`pkInnerPoint`](docs/commands/pkInnerPoint.md) | Point always inside a geometry (pole of inaccessibility on XY). | ✓ |
+| [`pkMinBoundingBox`](docs/commands/pkMinBoundingBox.md) | Minimum-volume oriented bounding box. | ✓ |
+| [`pkMinBoundingRect`](docs/commands/pkMinBoundingRect.md) | Minimum-area bounding rectangle on XY. | ✓ |
+| [`pkOrientToMinRect`](docs/commands/pkOrientToMinRect.md) | Rotate objects so their min rectangle aligns to X or Y. | ✓ |
 
 ## Install
 

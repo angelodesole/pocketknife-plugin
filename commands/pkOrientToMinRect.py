@@ -1,23 +1,19 @@
 #! python3
 """Rotate objects so their minimum XY rectangle aligns to X or Y.
 
-Prototype: run it in Rhino 8 with _RunPythonScript (or open it in _ScriptEditor).
+Pocket Knife command. Also runnable from the repository with _RunPythonScript.
 """
 
 import os
 import sys
 
-# Development bootstrap: load the shared library from ../src and always reload
-# it, so edits are picked up without restarting Rhino.
-_SRC = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
-)
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
-for _name in [
-    m for m in sys.modules if m == "pocketknife" or m.startswith("pocketknife.")
-]:
-    del sys.modules[_name]
+try:
+    import pocketknife  # noqa: F401  Installed with the plug-in.
+except ImportError:
+    # Development: run from the repository with _RunPythonScript.
+    sys.path.insert(
+        0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
+    )
 
 import Rhino
 import Rhino.Geometry as rg

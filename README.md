@@ -34,7 +34,7 @@ Once published: Rhino 8 → `_PackageManager` → search **pocketknife** → Ins
 src/pocketknife/   shared library (geometry, layers, utilities)
 sandbox/           prototypes to test with _RunPythonScript
 commands/          approved Rhino commands (one file per command)
-grasshopper/       approved Grasshopper components
+grasshopper/       Grasshopper component scripts (see grasshopper/README.md)
 icons/svg/         icon sources
 project/           Rhino Script Editor project (.rhproj) -> .rhp/.gha/.yak
 tests/             pytest tests for Rhino-independent logic

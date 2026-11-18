@@ -8,7 +8,15 @@ from __future__ import annotations
 import Rhino
 import Rhino.Geometry as rg
 
-from pocketknife.geometry2d import Point2, Rect2D, rect_corners
+from pocketknife.geometry2d import (
+    Point2,
+    Rect2D,
+    group_loops_into_regions,
+    polylabel,
+    rect_corners,
+    signed_distance,
+)
+from pocketknife.geometry3d import Box3D
 
 
 def _curve_points(curve: rg.Curve, tolerance: float, angle_tol: float) -> list:
@@ -203,3 +211,49 @@ def vertical_mid_z(
         low, high = max(pairs, key=lambda pair: pair[1] - pair[0])
         return (low + high) / 2.0
     return fallback
+
+
+def document_tolerance(default: float = 0.001) -> float:
+    """Returns the active Rhino document tolerance, or ``default``."""
+    doc = Rhino.RhinoDoc.ActiveDoc
+    return doc.ModelAbsoluteTolerance if doc is not None else default
+
+
+def inner_points(
+    geometry: rg.GeometryBase,
+    tolerance: float,
+    z_mode: str = "Mid",
+    regions_mode: str = "All",
+    relative: float = 1e-3,
+) -> list[tuple[rg.Point3d, float]]:
+    """Computes the inner points of a geometry (pole of inaccessibility on XY).
+
+    Args:
+        geometry: Closed curve, hatch, surface, brep, extrusion, SubD or mesh.
+        tolerance: Document tolerance.
+        z_mode: ``"Zero"`` or ``"Mid"``.
+        regions_mode: ``"All"`` (one point per region) or ``"Biggest"``.
+        relative: Precision relative to the size of each region.
+
+    Returns:
+        ``(point, distance)`` pairs, where ``distance`` is the distance from the
+        point to the nearest XY boundary (radius of the largest inner circle).
+    """
+    regions = group_loops_into_regions(xy_outlines(geometry, tolerance))
+    if regions_mode == "Biggest":
+        regions = regions[:1]
+    results = []
+    for rings in regions:
+        x, y = polylabel(rings, relative=relative)
+        z = 0.0 if z_mode == "Zero" else vertical_mid_z(geometry, x, y, tolerance)
+        results.append((rg.Point3d(x, y, z), signed_distance((x, y), rings)))
+    return results
+
+
+def box_to_rhino_box(box: Box3D) -> rg.Box:
+    """Converts a ``Box3D`` to a ``Rhino.Geometry.Box`` (sizes may be zero)."""
+    plane = rg.Plane(
+        rg.Point3d(*box.center), rg.Vector3d(*box.axes[0]), rg.Vector3d(*box.axes[1])
+    )
+    intervals = [rg.Interval(-s / 2.0, s / 2.0) for s in box.sizes]
+    return rg.Box(plane, *intervals)

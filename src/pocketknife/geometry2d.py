@@ -226,7 +226,9 @@ def _centroid(ring: Ring) -> Point2:
     return (cx / area, cy / area)
 
 
-def polylabel(rings: Sequence[Ring], precision: float | None = None) -> Point2:
+def polylabel(
+    rings: Sequence[Ring], precision: float | None = None, relative: float = 1e-3
+) -> Point2:
     """Finds the pole of inaccessibility of a polygon.
 
     It is the interior point farthest from the boundary, so it is always inside
@@ -235,8 +237,9 @@ def polylabel(rings: Sequence[Ring], precision: float | None = None) -> Point2:
     Args:
         rings: Outer ring followed by hole rings. Rings must not repeat the
             first point at the end.
-        precision: Absolute tolerance of the result. Defaults to 1/1000 of the
-            largest bounding-box side.
+        precision: Absolute tolerance of the result. If None, it is
+            ``relative`` times the largest bounding-box side.
+        relative: Relative tolerance used when ``precision`` is None.
 
     Returns:
         The pole of inaccessibility.
@@ -250,7 +253,7 @@ def polylabel(rings: Sequence[Ring], precision: float | None = None) -> Point2:
     if cell_size == 0.0:
         return ((min_x + max_x) / 2.0, (min_y + max_y) / 2.0)
     if precision is None or precision <= 0.0:
-        precision = max(width, height) * 1e-3
+        precision = max(width, height) * relative
 
     counter = itertools.count()
     heap: list[tuple[float, int, tuple[float, float, float, float]]] = []

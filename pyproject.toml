@@ -22,6 +22,8 @@ ignore = [
 # Prototypes add ../src to sys.path before importing; file names are command names.
 "sandbox/*" = ["E402", "N999"]
 "commands/*" = ["E402", "N999"]
+# Grasshopper scripts: inputs and ghenv are injected globals.
+"grasshopper/*" = ["E402", "N999", "N816", "F821", "E741"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

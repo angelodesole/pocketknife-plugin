@@ -16,39 +16,13 @@ except ImportError:
     )
 
 import Rhino
-import Rhino.Geometry as rg
 import scriptcontext as sc
 
-from pocketknife.geometry2d import group_loops_into_regions, polylabel
 from pocketknife.rhinoui import get_objects_with_options
-from pocketknife.rhinoutil import vertical_mid_z, xy_outlines
+from pocketknife.rhinoutil import inner_points
 
 OT = Rhino.DocObjects.ObjectType
 FILTER = OT.Curve | OT.Surface | OT.Brep | OT.Extrusion | OT.Mesh | OT.Hatch | OT.SubD
-
-
-def inner_points(geometry, tolerance, z_mode="Mid", regions_mode="All", precision=None):
-    """Computes inner points of a geometry.
-
-    Args:
-        geometry: Closed curve, hatch, surface, brep, extrusion, SubD or mesh.
-        tolerance: Document tolerance.
-        z_mode: ``"Zero"`` or ``"Mid"``.
-        regions_mode: ``"All"`` (one point per region) or ``"Biggest"``.
-        precision: Absolute precision, None for automatic.
-
-    Returns:
-        List of ``Point3d``.
-    """
-    regions = group_loops_into_regions(xy_outlines(geometry, tolerance))
-    if regions_mode == "Biggest":
-        regions = regions[:1]
-    points = []
-    for rings in regions:
-        x, y = polylabel(rings, precision)
-        z = 0.0 if z_mode == "Zero" else vertical_mid_z(geometry, x, y, tolerance)
-        points.append(rg.Point3d(x, y, z))
-    return points
 
 
 def main():
@@ -66,9 +40,12 @@ def main():
 
     added, failed = [], 0
     for obj in objects:
-        points = inner_points(
-            obj.Geometry, doc.ModelAbsoluteTolerance, values["Z"], values["Regions"]
-        )
+        points = [
+            point
+            for point, _ in inner_points(
+                obj.Geometry, doc.ModelAbsoluteTolerance, values["Z"], values["Regions"]
+            )
+        ]
         if not points:
             failed += 1
         for point in points:

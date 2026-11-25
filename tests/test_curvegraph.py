@@ -8,7 +8,10 @@ import pytest
 
 from pocketknife.curvegraph import (
     arc_segment,
+    ARC,
+    LINE,
     build_chains,
+    compact_chain,
     drop_slivers,
     fuse_endpoints,
     line_segment,
@@ -246,3 +249,88 @@ def test_single_closed_segment_is_closed_chain():
 def test_build_chains_is_deterministic():
     segs = grid(4, 9.0, 2)
     assert build_chains(segs, TOL, MAX_ANGLE) == build_chains(segs, TOL, MAX_ANGLE)
+
+
+def _point_line_distance(p, s):
+    ax, ay = s.start
+    dx, dy = s.end[0] - ax, s.end[1] - ay
+    t = max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / (dx * dx + dy * dy)))
+    return math.hypot(p[0] - ax - t * dx, p[1] - ay - t * dy)
+
+
+def test_forty_collinear_become_one_line():
+    segs = [line_segment((i, 0), (i + 1, 0)) for i in range(40)]
+    (chain,) = build_chains(segs, TOL, MAX_ANGLE)
+    (line,) = compact_chain(segs, chain, TOL)
+    assert line.kind == LINE
+    assert line.length == pytest.approx(40)
+
+
+def test_grid_line_merges_through_crossings():
+    chains = build_chains(grid(3, 10.0, 4, overhang=1.0), TOL, MAX_ANGLE)
+    segs = grid(3, 10.0, 4, overhang=1.0)
+    for chain in chains:
+        (line,) = compact_chain(segs, chain, TOL)
+        assert line.length == pytest.approx(12)
+
+
+def test_drift_beyond_tolerance_not_merged():
+    # Polyline on a circle of radius 1000: every joint is almost straight
+    # (0.06 deg) but the sagitta over 10 units is 0.0125, beyond tolerance.
+    r = 1000.0
+    pts = [(r * math.sin(i / r), r - r * math.cos(i / r)) for i in range(11)]
+    segs = [line_segment(a, b) for a, b in zip(pts, pts[1:])]
+    (chain,) = build_chains(segs, TOL, MAX_ANGLE)
+    out = compact_chain(segs, chain, TOL)
+    assert len(out) > 1
+    for p in pts:
+        assert min(_point_line_distance(p, s) for s in out) <= TOL
+
+
+def test_arc_pieces_merge_and_circle_closes():
+    segs = [
+        arc_segment((0, 0), 1, i * 2 * math.pi / 5, 2 * math.pi / 5) for i in range(5)
+    ]
+    (chain,) = build_chains(segs, TOL, MAX_ANGLE)
+    (arc,) = compact_chain(segs, chain, TOL)
+    assert arc.kind == ARC
+    assert arc.length == pytest.approx(2 * math.pi)
+
+
+def test_arcs_with_different_radius_not_merged():
+    a = arc_segment((0, 0), 1.0, 0, math.pi / 2)
+    b = arc_segment((0, 1.0 - 1.01), 1.01, math.pi / 2, math.pi / 2)
+    (chain,) = build_chains([a, b], TOL, MAX_ANGLE)
+    assert len(compact_chain([a, b], chain, TOL)) == 2
+
+
+def test_line_and_arc_never_merge():
+    segs = [line_segment((-1, 0), (1, 0)), arc_segment((0, 0), 1, 0, math.pi)]
+    (chain,) = build_chains(segs, TOL, MAX_ANGLE)
+    assert len(compact_chain(segs, chain, TOL)) == 2
+
+
+def test_rectangle_keeps_four_corners():
+    segs = rectangle_edges(0, 0, 10, 6)
+    (chain,) = build_chains(segs, TOL, MAX_ANGLE)
+    out = compact_chain(segs, chain, TOL)
+    assert len(out) == 4
+    assert out[-1].end == pytest.approx(out[0].start)
+
+
+def test_closed_chain_merges_across_seam():
+    # Square whose first and last segments are collinear halves of one side.
+    pts = [(5, 0), (10, 0), (10, 10), (0, 10), (0, 0), (5, 0)]
+    segs = [line_segment(a, b) for a, b in zip(pts, pts[1:])]
+    (chain,) = build_chains(segs, TOL, MAX_ANGLE)
+    assert len(compact_chain(segs, chain, TOL)) == 4
+
+
+def test_merged_line_keeps_longest_source():
+    segs = [
+        line_segment((0, 0), (1, 0), source=4),
+        line_segment((1, 0), (5, 0), source=9),
+    ]
+    (chain,) = build_chains(segs, TOL, MAX_ANGLE)
+    (line,) = compact_chain(segs, chain, TOL)
+    assert line.source == 9

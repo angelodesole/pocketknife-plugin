@@ -551,3 +551,110 @@ def build_chains(
         if not visited[seg]:
             chains.append(walk(seg, 0))
     return chains
+
+
+def _segment_point_distance(p: Point2, a: Point2, b: Point2) -> float:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length_sq = dx * dx + dy * dy
+    if length_sq == 0.0:
+        return _dist(p, a)
+    t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length_sq
+    t = max(0.0, min(1.0, t))
+    return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+
+
+def _merge_lines(run: list[Segment], tol: float) -> Segment | None:
+    """One line through a run of lines, or None if a vertex would move."""
+    start, end = run[0].start, run[-1].end
+    if _dist(start, end) <= tol:
+        return None
+    d = _unit(end[0] - start[0], end[1] - start[1])
+    for s in run:
+        if s.t_start[0] * d[0] + s.t_start[1] * d[1] <= 0.0:
+            return None
+        if _segment_point_distance(s.end, start, end) > tol:
+            return None
+    owner = max(run, key=lambda s: s.length)
+    return line_segment(start, end, owner.source)
+
+
+def _merge_arcs(run: list[Segment], tol: float) -> Segment | None:
+    """One arc through a run of arcs, or None if a vertex would move."""
+    first = run[0]
+    sweep = 0.0
+    for s in run:
+        if s.ccw != first.ccw or s.radius is None:
+            return None
+        if _dist(s.center, first.center) > tol or abs(s.radius - first.radius) > tol:
+            return None
+        sweep += s.sweep
+    if abs(sweep) > _TWO_PI + tol / first.radius:
+        return None
+    if abs(abs(sweep) - _TWO_PI) <= tol / first.radius:
+        sweep = math.copysign(_TWO_PI, sweep)
+    owner = max(run, key=lambda s: s.length)
+    merged = arc_segment(
+        first.center, first.radius, first.start_angle, sweep, owner.source
+    )
+    if _dist(merged.end, run[-1].end) > tol:
+        return None
+    for s in run[:-1]:
+        if abs(_dist(s.end, first.center) - first.radius) > tol:
+            return None
+    return merged
+
+
+def _merge(run: list[Segment], tol: float) -> Segment | None:
+    if len(run) == 1:
+        return run[0]
+    if all(s.kind == LINE for s in run):
+        return _merge_lines(run, tol)
+    if all(s.kind == ARC for s in run):
+        return _merge_arcs(run, tol)
+    return None
+
+
+def _compact(
+    oriented: list[Segment], tol: float
+) -> list[tuple[list[Segment], Segment]]:
+    """Greedy runs: each entry is (original pieces, merged segment)."""
+    out: list[tuple[list[Segment], Segment]] = []
+    for s in oriented:
+        if out:
+            run, _ = out[-1]
+            merged = _merge(run + [s], tol)
+            if merged is not None:
+                out[-1] = (run + [s], merged)
+                continue
+        out.append(([s], s))
+    return out
+
+
+def compact_chain(
+    segments: Sequence[Segment], chain: Chain, tol: float
+) -> list[Segment]:
+    """Orients the chain's segments and merges mergeable neighbours.
+
+    Consecutive lines merge into one line when every intermediate vertex
+    stays within ``tol`` of it. Consecutive arcs merge when they share center,
+    radius and direction within ``tol``. A closed chain also merges across its
+    seam. ``FREE`` segments never merge. A merged segment keeps the ``source``
+    of its longest piece.
+
+    Args:
+        segments: All segments the chain indexes.
+        chain: Chain from ``build_chains``.
+        tol: Absolute tolerance.
+
+    Returns:
+        The segments of the output curve, in order and oriented.
+    """
+    oriented = [
+        reversed_segment(segments[i]) if rev else segments[i] for i, rev in chain.items
+    ]
+    runs = _compact(oriented, tol)
+    if chain.closed and len(runs) > 1:
+        seam = _merge(runs[-1][0] + runs[0][0], tol)
+        if seam is not None:
+            runs = [(runs[-1][0] + runs[0][0], seam)] + runs[1:-1]
+    return [merged for _, merged in runs]

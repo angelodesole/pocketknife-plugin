@@ -8,7 +8,9 @@ import pytest
 
 from pocketknife.curvegraph import (
     ARC,
+    FREE,
     LINE,
+    Segment,
     arc_segment,
     build_chains,
     compact_chain,
@@ -16,6 +18,7 @@ from pocketknife.curvegraph import (
     fuse_endpoints,
     line_segment,
     remove_overlaps,
+    reversed_segment,
 )
 
 TOL = 0.001
@@ -334,3 +337,10 @@ def test_merged_line_keeps_longest_source():
     (chain,) = build_chains(segs, TOL, MAX_ANGLE)
     (line,) = compact_chain(segs, chain, TOL)
     assert line.source == 9
+
+
+def test_reversed_free_segment_keeps_ref_and_swaps_tangents():
+    s = Segment(FREE, (0, 0), (1, 1), (1, 0), (0, -1), 2.0, source=3, ref=5)
+    r = reversed_segment(s)
+    assert (r.start, r.end, r.t_start, r.t_end) == ((1, 1), (0, 0), (0, -1), (1, 0))
+    assert (r.source, r.ref) == (3, 5)

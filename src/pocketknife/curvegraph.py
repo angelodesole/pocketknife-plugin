@@ -38,6 +38,8 @@ class Segment(NamedTuple):
         source: Index of the input curve the segment comes from.
         start_angle: Arc start angle in radians (arcs only).
         sweep: Signed arc sweep in radians (arcs only).
+        ref: Caller-defined reference, e.g. the index of the original free
+            curve. Kept by ``reversed_segment``.
     """
 
     kind: str
@@ -52,6 +54,7 @@ class Segment(NamedTuple):
     source: int = -1
     start_angle: float | None = None
     sweep: float | None = None
+    ref: int = -1
 
 
 def _unit(x: float, y: float) -> Vec2:

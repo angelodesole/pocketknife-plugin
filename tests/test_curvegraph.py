@@ -8,6 +8,7 @@ import pytest
 
 from pocketknife.curvegraph import (
     arc_segment,
+    build_chains,
     drop_slivers,
     fuse_endpoints,
     line_segment,
@@ -15,6 +16,33 @@ from pocketknife.curvegraph import (
 )
 
 TOL = 0.001
+MAX_ANGLE = math.radians(15)
+
+
+def grid(n, size, pieces, overhang=0.0):
+    """n lines along X and n along Y, split at crossings and into pieces."""
+    coords = [k * size / (n - 1) for k in range(n)]
+    stops = sorted(
+        {
+            a + (b - a) * j / pieces
+            for a, b in zip(coords, coords[1:])
+            for j in range(pieces + 1)
+        }
+    )
+    if overhang:
+        stops = [-overhang] + stops + [size + overhang]
+    segs = []
+    for c in coords:
+        for a, b in zip(stops, stops[1:]):
+            segs.append(line_segment((a, c), (b, c)))
+            segs.append(line_segment((c, a), (c, b)))
+    return segs
+
+
+def rectangle_edges(x, y, w, h):
+    """Closed rectangle, bottom edge split at its middle."""
+    pts = [(x, y), (x + w / 2, y), (x + w, y), (x + w, y + h), (x, y + h)]
+    return [line_segment(a, b) for a, b in zip(pts, pts[1:] + pts[:1])]
 
 
 def test_line_segment_tangents_point_inward():
@@ -147,3 +175,74 @@ def test_overlap_scales_on_dense_grid():
     out, n = remove_overlaps(segs, TOL)
     assert time.perf_counter() - start < 2.0
     assert n == 0
+
+
+def _shape(chains):
+    return sorted((c.closed, len(c.items)) for c in chains)
+
+
+def test_grid_with_overhang_joins_along_x_and_y():
+    chains = build_chains(grid(3, 10.0, 4, overhang=1.0), TOL, MAX_ANGLE)
+    assert len(chains) == 6
+    assert not any(c.closed for c in chains)
+
+
+def test_grid_outline_closed_and_inner_lines_separate():
+    chains = build_chains(grid(3, 10.0, 4), TOL, MAX_ANGLE)
+    assert _shape(chains) == [(False, 8), (False, 8), (True, 32)]
+
+
+def test_outline_not_joined_to_inner_t():
+    segs = rectangle_edges(0, 0, 10, 6) + [line_segment((5, 0), (5, 3))]
+    chains = build_chains(segs, TOL, MAX_ANGLE)
+    assert _shape(chains) == [(False, 1), (True, 5)]
+
+
+def test_cross_gives_two_straight_curves():
+    segs = [
+        line_segment((0, 0), (1, 0)),
+        line_segment((1, 0), (2, 0)),
+        line_segment((1, -1), (1, 0)),
+        line_segment((1, 0), (1, 1)),
+    ]
+    chains = build_chains(segs, TOL, MAX_ANGLE)
+    assert _shape(chains) == [(False, 2), (False, 2)]
+    for c in chains:
+        (i, _), (j, _) = c.items
+        assert {i, j} in ({0, 1}, {2, 3})
+
+
+def test_y_junction_splits():
+    segs = [
+        line_segment((0, 0), (math.cos(a), math.sin(a)))
+        for a in (0, 2 * math.pi / 3, 4 * math.pi / 3)
+    ]
+    assert len(build_chains(segs, TOL, MAX_ANGLE)) == 3
+
+
+def test_chain_items_are_oriented():
+    segs = [line_segment((1, 0), (0, 0)), line_segment((1, 0), (2, 0))]
+    (chain,) = build_chains(segs, TOL, MAX_ANGLE)
+    assert chain.items == [(0, True), (1, False)]
+    assert not chain.closed
+
+
+def test_two_arcs_make_closed_circle():
+    segs = [
+        arc_segment((0, 0), 1, 0, math.pi),
+        arc_segment((0, 0), 1, math.pi, math.pi),
+    ]
+    (c,) = build_chains(segs, TOL, MAX_ANGLE)
+    assert c.closed
+    assert len(c.items) == 2
+
+
+def test_single_closed_segment_is_closed_chain():
+    (c,) = build_chains([arc_segment((0, 0), 1, 0, 2 * math.pi)], TOL, MAX_ANGLE)
+    assert c.closed
+    assert c.items == [(0, False)]
+
+
+def test_build_chains_is_deterministic():
+    segs = grid(4, 9.0, 2)
+    assert build_chains(segs, TOL, MAX_ANGLE) == build_chains(segs, TOL, MAX_ANGLE)

@@ -450,3 +450,104 @@ def remove_overlaps(
         removed += count
     kept = [s for i, s in enumerate(segments) if i not in replaced]
     return kept + added, removed
+
+
+class Chain(NamedTuple):
+    """An ordered run of segments that becomes one output curve.
+
+    Attributes:
+        items: ``(segment index, reversed)`` pairs, in order along the curve.
+        closed: True if the chain ends where it starts.
+    """
+
+    items: list[tuple[int, bool]]
+    closed: bool
+
+
+def _deviation(a: Vec2, b: Vec2) -> float:
+    """Angle between ``a`` and the reverse of ``b`` (0 = straight on)."""
+    dot = -(a[0] * b[0] + a[1] * b[1])
+    return math.acos(max(-1.0, min(1.0, dot)))
+
+
+def _pair_ends(
+    segments: Sequence[Segment], tol: float, max_angle: float
+) -> dict[int, int]:
+    """Pairs segment ends at each node. Ends are numbered ``2 * i + side``."""
+    points = [p for s in segments for p in (s.start, s.end)]
+    node_ids = fuse_endpoints(points, tol)
+    nodes: dict[int, list[int]] = {}
+    for end, node in enumerate(node_ids):
+        nodes.setdefault(node, []).append(end)
+
+    def tangent(end: int) -> Vec2:
+        s = segments[end // 2]
+        return s.t_end if end % 2 else s.t_start
+
+    pairs: dict[int, int] = {}
+    for ends in nodes.values():
+        if len(ends) == 2:
+            a, b = ends
+            pairs[a], pairs[b] = b, a
+            continue
+        candidates = sorted(
+            (round(_deviation(tangent(a), tangent(b)), 9), a, b)
+            for k, a in enumerate(ends)
+            for b in ends[k + 1 :]
+        )
+        used: set[int] = set()
+        for dev, a, b in candidates:
+            if dev > max_angle:
+                break
+            if a in used or b in used:
+                continue
+            used.update((a, b))
+            pairs[a], pairs[b] = b, a
+    return pairs
+
+
+def build_chains(
+    segments: Sequence[Segment], tol: float, max_angle: float
+) -> list[Chain]:
+    """Joins segments into chains following the straightest continuation.
+
+    At a node with two branches the branches are always joined. At a node
+    with three or more, the pair of branches closest to straight is joined
+    first, as long as its deviation is within ``max_angle``, and so on.
+    Branches left without a partner end at the node.
+
+    Args:
+        segments: Segments, already free of overlaps.
+        tol: Absolute tolerance used to fuse endpoints.
+        max_angle: Maximum deviation from straight at junctions, in radians.
+
+    Returns:
+        Open chains (walked from their free ends, in segment order), then
+        closed chains.
+    """
+    pairs = _pair_ends(segments, tol, max_angle)
+    visited = [False] * len(segments)
+    chains: list[Chain] = []
+
+    def walk(first: int, entry_side: int) -> Chain:
+        items = []
+        seg, side = first, entry_side
+        while True:
+            visited[seg] = True
+            items.append((seg, side == 1))
+            partner = pairs.get(2 * seg + 1 - side)
+            if partner is None:
+                return Chain(items, False)
+            seg, side = partner // 2, partner % 2
+            if seg == first and side == entry_side:
+                return Chain(items, True)
+            if visited[seg]:
+                return Chain(items, False)
+
+    for end in range(2 * len(segments)):
+        if end not in pairs and not visited[end // 2]:
+            chains.append(walk(end // 2, end % 2))
+    for seg in range(len(segments)):
+        if not visited[seg]:
+            chains.append(walk(seg, 0))
+    return chains

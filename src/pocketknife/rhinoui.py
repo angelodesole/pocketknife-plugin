@@ -13,6 +13,7 @@ def get_objects_with_options(
     sticky_key: str,
     object_filter: Rhino.DocObjects.ObjectType = Rhino.DocObjects.ObjectType.AnyObject,
     accept_nothing: bool = False,
+    number_options: dict[str, tuple[float, float, float]] | None = None,
 ):
     """Asks for objects while offering list options on the command line.
 
@@ -25,6 +26,8 @@ def get_objects_with_options(
         object_filter: Allowed object types.
         accept_nothing: If True, pressing Enter without a selection returns an
             empty object list instead of cancelling.
+        number_options: Option name mapped to ``(default, minimum, maximum)``
+            for numeric options. Their values are returned as floats.
 
     Returns:
         ``(objects, values)`` where ``objects`` is a list of ``RhinoObject``
@@ -38,6 +41,14 @@ def get_objects_with_options(
         else allowed[0]
         for name, allowed in options.items()
     }
+    number_options = number_options or {}
+    for name, (default, low, high) in number_options.items():
+        value = stored.get(name, default)
+        values[name] = (
+            float(value)
+            if isinstance(value, (int, float)) and low <= value <= high
+            else float(default)
+        )
 
     go = Rhino.Input.Custom.GetObject()
     go.SetCommandPrompt(prompt)
@@ -53,11 +64,22 @@ def get_objects_with_options(
         for name, allowed in options.items():
             index = go.AddOptionList(name, list(allowed), allowed.index(values[name]))
             option_indices[index] = name
+        doubles = {}
+        for name, (_, low, high) in number_options.items():
+            option = Rhino.Input.Custom.OptionDouble(values[name], low, high)
+            index = go.AddOptionDouble(name, option)
+            if isinstance(index, tuple):  # pythonnet returns ref arguments too.
+                index = index[0]
+            doubles[index] = (name, option)
         result = go.GetMultiple(1, 0)
         if result == GetResult.Option:
-            name = option_indices.get(go.OptionIndex())
+            index = go.OptionIndex()
+            name = option_indices.get(index)
             if name is not None:
                 values[name] = options[name][go.Option().CurrentListOptionIndex]
+            elif index in doubles:
+                name, option = doubles[index]
+                values[name] = float(option.CurrentValue)
             go.EnablePreSelect(False, True)
             continue
         if result == GetResult.Nothing and accept_nothing:

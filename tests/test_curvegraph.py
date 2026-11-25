@@ -10,6 +10,7 @@ from pocketknife.curvegraph import (
     ARC,
     FREE,
     LINE,
+    Chain,
     Segment,
     arc_segment,
     build_chains,
@@ -344,3 +345,47 @@ def test_reversed_free_segment_keeps_ref_and_swaps_tangents():
     r = reversed_segment(s)
     assert (r.start, r.end, r.t_start, r.t_end) == ((1, 1), (0, 0), (0, -1), (1, 0))
     assert (r.source, r.ref) == (3, 5)
+
+
+def test_line_tangent_to_circle_at_seam_keeps_circle_closed():
+    line = line_segment((-2, 1), (0, 1))
+    circle = arc_segment((0, 0), 1, math.pi / 2, -2 * math.pi)  # CW from top.
+    chains = build_chains([line, circle], TOL, MAX_ANGLE)
+    assert sorted((c.closed, tuple(c.items)) for c in chains) == [
+        (False, ((0, False),)),
+        (True, ((1, False),)),
+    ]
+
+
+def test_short_near_collinear_duplicate_found():
+    a = line_segment((0, 0), (0.02, 0))
+    b = line_segment((0, 0), (0.02, 0.0009))
+    _, n = remove_overlaps([a, b], TOL)
+    assert n == 1
+
+
+def test_overlap_scales_on_one_support_line():
+    d = (math.cos(0.005), math.sin(0.005))
+    segs = [
+        line_segment((d[0] * i, d[1] * i), (d[0] * (i + 1), d[1] * (i + 1)))
+        for i in range(3000)
+    ]
+    start = time.perf_counter()
+    _, n = remove_overlaps(segs, TOL)
+    assert time.perf_counter() - start < 2.0
+    assert n == 0
+
+
+def test_compact_scales_on_long_collinear_chain():
+    segs = [line_segment((i, 0), (i + 1, 0)) for i in range(4000)]
+    (chain,) = build_chains(segs, TOL, MAX_ANGLE)
+    start = time.perf_counter()
+    (line,) = compact_chain(segs, chain, TOL)
+    assert time.perf_counter() - start < 1.0
+    assert line.length == pytest.approx(4000)
+
+
+def test_backtracking_lines_not_merged():
+    segs = [line_segment((0, 0), (2, 0)), line_segment((2, 0), (1, 0))]
+    chain = Chain([(0, False), (1, False)], False)
+    assert len(compact_chain(segs, chain, TOL)) == 2

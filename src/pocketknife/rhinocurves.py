@@ -34,15 +34,19 @@ class CleanResult(NamedTuple):
         curves: New curves.
         sources: Per new curve, the index of the input curve whose layer and
             attributes it takes (the input of its longest piece).
+        members: Per new curve, the set of input indices it is made of.
         unchanged: Inputs that came out identical; leave them in place.
         skipped: Non-planar inputs, left untouched.
+        failed: Inputs of curves that could not be built; never delete them.
         removed: Number of overlapping stretches removed.
     """
 
     curves: list
     sources: list
+    members: list
     unchanged: list
     skipped: list
+    failed: list
     removed: int
 
 
@@ -203,21 +207,30 @@ def _remove_free_overlaps(pieces: list, tol: float) -> tuple:
     for _ in range(3):
         alive = list(pieces)
         free = [_is_free(p.curve, tol) for p in alive]
-        boxes = [p.curve.GetBoundingBox(False) for p in alive]
-        order = sorted(range(len(alive)), key=lambda i: boxes[i].Min.X)
+        if not any(free):
+            break
+        boxes = []
+        for p in alive:
+            box = p.curve.GetBoundingBox(False)
+            boxes.append(
+                (box.Min.X, box.Min.Y, box.Min.Z, box.Max.X, box.Max.Y, box.Max.Z)
+            )
+        order = sorted(range(len(alive)), key=lambda i: boxes[i][0])
         dead, extra, changed = set(), [], False
-        for k, i in enumerate(order):
-            for j in order[k + 1 :]:
-                if boxes[j].Min.X > boxes[i].Max.X + tol:
+        for i in [i for i in order if free[i]]:
+            bi = boxes[i]
+            for j in order:
+                bj = boxes[j]
+                if bj[0] > bi[3] + tol:
                     break
-                if i in dead or j in dead or not (free[i] or free[j]):
+                if j == i or (free[j] and j < i) or i in dead or j in dead:
                     continue
-                bi, bj = boxes[i], boxes[j]
                 if (
-                    bj.Min.Y > bi.Max.Y + tol
-                    or bi.Min.Y > bj.Max.Y + tol
-                    or bj.Min.Z > bi.Max.Z + tol
-                    or bi.Min.Z > bj.Max.Z + tol
+                    bj[3] < bi[0] - tol
+                    or bj[1] > bi[4] + tol
+                    or bi[1] > bj[4] + tol
+                    or bj[2] > bi[5] + tol
+                    or bi[2] > bj[5] + tol
                 ):
                     continue
                 a, b = alive[i].curve, alive[j].curve
@@ -281,7 +294,18 @@ def _assemble(
     closed: bool,
     free_curves: list,
 ) -> rg.Curve:
-    """Builds one curve from oriented segments, snapping shared endpoints."""
+    """Builds one curve from oriented segments, snapping shared endpoints.
+
+    Returns:
+        The curve, or None if Rhino could not build a valid one.
+    """
+    if closed and len(parts) == 1 and parts[0].kind == ARC:
+        # A single arc closing on itself within tolerance is a full circle.
+        s = parts[0]
+        s = s._replace(sweep=math.copysign(2 * math.pi, s.sweep))
+        start = _pt(plane, s.start)
+        curve = _arc_curve(plane, s, start, start)
+        return curve if curve.IsValid else None
     points = [_pt(plane, parts[0].start)]
     for s in parts:
         points.append(_pt(plane, s.end))
@@ -291,7 +315,8 @@ def _assemble(
         polyline = rg.Polyline()
         for point in points:
             polyline.Add(point)
-        return rg.PolylineCurve(polyline)
+        curve = rg.PolylineCurve(polyline)
+        return curve if curve.IsValid else None
     curve = rg.PolyCurve()
     for k, s in enumerate(parts):
         start, end = points[k], points[k + 1]
@@ -301,8 +326,9 @@ def _assemble(
             piece = _arc_curve(plane, s, start, end)
         else:
             piece = _free_curve(free_curves, s, start, end)
-        curve.Append(piece)
-    return curve
+        if piece is None or not piece.IsValid or not curve.Append(piece):
+            return None
+    return curve if curve.IsValid else None
 
 
 # Main -----------------------------------------------------------------------
@@ -359,7 +385,7 @@ def clean_curves(
         The cleaning result.
     """
     groups, skipped = _group(curves, keys, tol, angle_tol)
-    result_curves, sources, unchanged = [], [], []
+    result_curves, sources, members_out, unchanged, failed = [], [], [], [], []
     removed_total = 0
     max_angle = math.radians(max_angle_deg)
     for _, plane, members in groups:
@@ -390,6 +416,19 @@ def clean_curves(
             ):
                 unchanged.append(source)
                 continue
-            result_curves.append(_assemble(plane, parts, chain.closed, free_curves))
+            curve = _assemble(plane, parts, chain.closed, free_curves)
+            if curve is None:
+                failed += sorted(chain_sources)
+                continue
+            result_curves.append(curve)
             sources.append(source)
-    return CleanResult(result_curves, sources, unchanged, skipped, removed_total)
+            members_out.append(chain_sources)
+    return CleanResult(
+        result_curves,
+        sources,
+        members_out,
+        unchanged,
+        skipped,
+        sorted(set(failed)),
+        removed_total,
+    )

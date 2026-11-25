@@ -247,44 +247,93 @@ def _lines_overlap(a: Segment, b: Segment, tol: float) -> bool:
     return min(hi, a.length) - max(lo, 0.0) > tol
 
 
-_ANGLE_BUCKET = 0.01
+def _sweep_pairs(items: list[tuple[float, float, int]]):
+    """Yields index pairs whose ``(lo, hi)`` intervals overlap."""
+    items.sort()
+    active: list[tuple[float, int]] = []
+    for lo, hi, i in items:
+        active = [(h, j) for h, j in active if h >= lo]
+        for _, j in active:
+            yield i, j
+        active.append((hi, i))
+
+
+def _clusters(items: list[tuple[float, float, int]]) -> list[list[int]]:
+    """Connected runs of overlapping ``(lo, hi)`` intervals."""
+    items.sort()
+    out: list[list[int]] = []
+    reach = -math.inf
+    for lo, hi, i in items:
+        if lo > reach:
+            out.append([])
+        out[-1].append(i)
+        reach = max(reach, hi)
+    return out
+
+
+def _angle_clusters(lines: list[int], segments: Sequence[Segment], tol: float):
+    """Groups lines whose directions may agree within their uncertainty.
+
+    A line of length ``L`` has a direction uncertain by about ``2 tol / L``.
+    Directions are taken modulo pi; a cluster can wrap around pi.
+
+    Returns:
+        ``(reference angle, members)`` per cluster; the reference is the
+        direction of the longest member.
+    """
+    items = []
+    for i in lines:
+        s = segments[i]
+        theta = math.atan2(s.t_start[1], s.t_start[0]) % math.pi
+        items.append((theta, min(math.pi / 2, 2.0 * tol / s.length), i))
+    items.sort()
+    clusters: list[list[tuple[float, float, int]]] = []
+    reach = -math.inf
+    for theta, spread, i in items:
+        if theta - spread > reach:
+            clusters.append([])
+        clusters[-1].append((theta, spread, i))
+        reach = max(reach, theta + spread)
+    if len(clusters) > 1:
+        first_low = min(theta - spread for theta, spread, _ in clusters[0])
+        if reach - math.pi >= first_low:
+            clusters[0] += clusters.pop()
+    out = []
+    for members in clusters:
+        _, _, ref = max(members, key=lambda m: (segments[m[2]].length, -m[2]))
+        d = segments[ref].t_start
+        out.append((math.atan2(d[1], d[0]), [m[2] for m in members]))
+    return out
 
 
 def _line_groups(lines: list[int], segments: Sequence[Segment], tol: float):
-    """Unions indices of lines that overlap on a common support line."""
+    """Unions indices of lines that overlap on a common support line.
+
+    Lines are clustered by direction, then by their extent across the
+    cluster direction, then swept along it, so long runs of collinear
+    fragments and dense parallel grids both stay near linear.
+    """
     uf = _UnionFind(len(segments))
-    buckets: dict[int, list[int]] = {}
-    for i in lines:
-        d = segments[i].t_start
-        theta = math.atan2(d[1], d[0]) % math.pi
-        buckets.setdefault(int(theta / _ANGLE_BUCKET), []).append(i)
-    count = int(math.pi / _ANGLE_BUCKET) + 1
-    for key, members in buckets.items():
-        theta0 = (key + 0.5) * _ANGLE_BUCKET
-        n0 = (-math.sin(theta0), math.cos(theta0))
-        neighbours = list(members)
-        for other in ((key + 1) % count,):
-            if other != key:
-                neighbours += buckets.get(other, [])
-        if key == 0:
-            # Angles near pi wrap around to 0.
-            neighbours += buckets.get(count - 1, [])
-        intervals = []
-        for i in neighbours:
+    for theta0, members in _angle_clusters(lines, segments, tol):
+        if len(members) < 2:
+            continue
+        d0 = (math.cos(theta0), math.sin(theta0))
+        n0 = (-d0[1], d0[0])
+
+        def extent(i: int, axis: Vec2) -> tuple[float, float, int]:
             s = segments[i]
-            a = s.start[0] * n0[0] + s.start[1] * n0[1]
-            b = s.end[0] * n0[0] + s.end[1] * n0[1]
-            intervals.append((min(a, b) - tol, max(a, b) + tol, i))
-        intervals.sort()
-        active: list[tuple[float, int]] = []
-        for lo, hi, i in intervals:
-            active = [(h, j) for h, j in active if h >= lo]
-            for _, j in active:
+            a = s.start[0] * axis[0] + s.start[1] * axis[1]
+            b = s.end[0] * axis[0] + s.end[1] * axis[1]
+            return (min(a, b) - tol, max(a, b) + tol, i)
+
+        for cluster in _clusters([extent(i, n0) for i in members]):
+            if len(cluster) < 2:
+                continue
+            for i, j in _sweep_pairs([extent(i, d0) for i in cluster]):
                 if uf.find(i) != uf.find(j) and _lines_overlap(
                     segments[i], segments[j], tol
                 ):
                     uf.union(i, j)
-            active.append((hi, i))
     groups: dict[int, list[int]] = {}
     for i in lines:
         groups.setdefault(uf.find(i), []).append(i)
@@ -309,17 +358,22 @@ def _split_lines(
     for tp, p in breaks:
         if not fused or tp - fused[-1][0] > tol:
             fused.append((tp, p))
-    spans = [(min(t(segments[i].start), t(segments[i].end)), i) for i in group]
-    spans = [(lo, lo + segments[i].length, i) for lo, i in spans]
+    spans = sorted((min(t(segments[i].start), t(segments[i].end)), i) for i in group)
     pieces: list[Segment] = []
     removed = 0
+    active: list[tuple[float, int]] = []
+    k = 0
     for (ta, pa), (tb, pb) in zip(fused, fused[1:]):
         mid = 0.5 * (ta + tb)
-        covering = [i for lo, hi, i in spans if lo < mid < hi]
-        if not covering:
+        while k < len(spans) and spans[k][0] < mid:
+            lo, i = spans[k]
+            active.append((lo + segments[i].length, i))
+            k += 1
+        active = [(hi, i) for hi, i in active if hi > mid]
+        if not active:
             continue
-        removed += len(covering) - 1
-        owner = max(covering, key=lambda i: (segments[i].length, -i))
+        removed += len(active) - 1
+        owner = max((i for _, i in active), key=lambda i: (segments[i].length, -i))
         pieces.append(line_segment(pa, pb, segments[owner].source))
     return pieces, removed
 
@@ -493,12 +547,17 @@ def _pair_ends(
             a, b = ends
             pairs[a], pairs[b] = b, a
             continue
+        used: set[int] = set()
+        # A closed segment (both ends at this node) stays a loop of its own.
+        for a in ends:
+            if a % 2 == 0 and a + 1 in ends:
+                used.update((a, a + 1))
+                pairs[a], pairs[a + 1] = a + 1, a
         candidates = sorted(
             (round(_deviation(tangent(a), tangent(b)), 9), a, b)
             for k, a in enumerate(ends)
             for b in ends[k + 1 :]
         )
-        used: set[int] = set()
         for dev, a, b in candidates:
             if dev > max_angle:
                 break
@@ -566,70 +625,118 @@ def _segment_point_distance(p: Point2, a: Point2, b: Point2) -> float:
     return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
 
 
-def _merge_lines(run: list[Segment], tol: float) -> Segment | None:
-    """One line through a run of lines, or None if a vertex would move."""
-    start, end = run[0].start, run[-1].end
-    if _dist(start, end) <= tol:
-        return None
-    d = _unit(end[0] - start[0], end[1] - start[1])
-    for s in run:
-        if s.t_start[0] * d[0] + s.t_start[1] * d[1] <= 0.0:
-            return None
-        if _segment_point_distance(s.end, start, end) > tol:
-            return None
-    owner = max(run, key=lambda s: s.length)
-    return line_segment(start, end, owner.source)
+def _simplify_lines(run: list[Segment], tol: float) -> list[Segment]:
+    """Fewest lines through a run of lines keeping every vertex within tol.
+
+    Douglas-Peucker on the run's vertices: a stretch becomes one line when
+    every intermediate vertex is within ``tol`` of it and no piece of the
+    stretch runs backwards along it.
+    """
+    points = [run[0].start] + [s.end for s in run]
+    keep = [False] * len(points)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(points) - 1)]
+    while stack:
+        first, last = stack.pop()
+        if last - first < 2:
+            continue
+        a, b = points[first], points[last]
+        d = _unit(b[0] - a[0], b[1] - a[1])
+        worst, split = -1.0, -1
+        for k in range(first + 1, last):
+            dist = _segment_point_distance(points[k], a, b)
+            back = run[k - 1].t_start[0] * d[0] + run[k - 1].t_start[1] * d[1] <= 0
+            if back or _dist(a, b) <= tol:
+                dist = math.inf
+            if dist > worst:
+                worst, split = dist, k
+        if run[last - 1].t_start[0] * d[0] + run[last - 1].t_start[1] * d[1] <= 0:
+            worst, split = math.inf, last - 1
+        if worst > tol:
+            keep[split] = True
+            stack += [(first, split), (split, last)]
+    out = []
+    first = 0
+    for k in range(1, len(points)):
+        if keep[k]:
+            pieces = run[first:k]
+            owner = max(pieces, key=lambda s: s.length)
+            out.append(
+                pieces[0]
+                if len(pieces) == 1
+                else line_segment(points[first], points[k], owner.source)
+            )
+            first = k
+    return out
 
 
-def _merge_arcs(run: list[Segment], tol: float) -> Segment | None:
-    """One arc through a run of arcs, or None if a vertex would move."""
-    first = run[0]
+def _simplify_arcs(run: list[Segment], tol: float) -> list[Segment]:
+    """Merges consecutive co-circular arcs, keeping every vertex within tol."""
+    out: list[Segment] = []
+    group: list[Segment] = []
     sweep = 0.0
+
+    def flush() -> None:
+        if not group:
+            return
+        if len(group) == 1:
+            out.append(group[0])
+            return
+        first = group[0]
+        total = sweep
+        if abs(abs(total) - _TWO_PI) <= tol / first.radius:
+            total = math.copysign(_TWO_PI, total)
+        owner = max(group, key=lambda s: s.length)
+        out.append(
+            arc_segment(
+                first.center, first.radius, first.start_angle, total, owner.source
+            )
+        )
+
     for s in run:
-        if s.ccw != first.ccw or s.radius is None:
-            return None
-        if _dist(s.center, first.center) > tol or abs(s.radius - first.radius) > tol:
-            return None
-        sweep += s.sweep
-    if abs(sweep) > _TWO_PI + tol / first.radius:
-        return None
-    if abs(abs(sweep) - _TWO_PI) <= tol / first.radius:
-        sweep = math.copysign(_TWO_PI, sweep)
-    owner = max(run, key=lambda s: s.length)
-    merged = arc_segment(
-        first.center, first.radius, first.start_angle, sweep, owner.source
-    )
-    if _dist(merged.end, run[-1].end) > tol:
-        return None
-    for s in run[:-1]:
-        if abs(_dist(s.end, first.center) - first.radius) > tol:
-            return None
-    return merged
-
-
-def _merge(run: list[Segment], tol: float) -> Segment | None:
-    if len(run) == 1:
-        return run[0]
-    if all(s.kind == LINE for s in run):
-        return _merge_lines(run, tol)
-    if all(s.kind == ARC for s in run):
-        return _merge_arcs(run, tol)
-    return None
-
-
-def _compact(
-    oriented: list[Segment], tol: float
-) -> list[tuple[list[Segment], Segment]]:
-    """Greedy runs: each entry is (original pieces, merged segment)."""
-    out: list[tuple[list[Segment], Segment]] = []
-    for s in oriented:
-        if out:
-            run, _ = out[-1]
-            merged = _merge(run + [s], tol)
-            if merged is not None:
-                out[-1] = (run + [s], merged)
+        if group:
+            first = group[0]
+            end_angle = first.start_angle + sweep + s.sweep
+            end = (
+                first.center[0] + first.radius * math.cos(end_angle),
+                first.center[1] + first.radius * math.sin(end_angle),
+            )
+            fits = (
+                s.ccw == first.ccw
+                and _dist(s.center, first.center) <= tol
+                and abs(s.radius - first.radius) <= tol
+                and abs(_dist(s.start, first.center) - first.radius) <= tol
+                and _dist(end, s.end) <= tol
+                and abs(sweep + s.sweep) <= _TWO_PI + tol / first.radius
+            )
+            if fits:
+                group.append(s)
+                sweep += s.sweep
                 continue
-        out.append(([s], s))
+            flush()
+        group, sweep = [s], s.sweep
+    flush()
+    return out
+
+
+def _compact(oriented: list[Segment], tol: float) -> list[Segment]:
+    """Simplifies each run of consecutive lines and of consecutive arcs."""
+    out: list[Segment] = []
+    k = 0
+    while k < len(oriented):
+        kind = oriented[k].kind
+        end = k + 1
+        if kind != FREE:
+            while end < len(oriented) and oriented[end].kind == kind:
+                end += 1
+        run = oriented[k:end]
+        if kind == LINE:
+            out += _simplify_lines(run, tol)
+        elif kind == ARC:
+            out += _simplify_arcs(run, tol)
+        else:
+            out += run
+        k = end
     return out
 
 
@@ -655,9 +762,14 @@ def compact_chain(
     oriented = [
         reversed_segment(segments[i]) if rev else segments[i] for i, rev in chain.items
     ]
-    runs = _compact(oriented, tol)
-    if chain.closed and len(runs) > 1:
-        seam = _merge(runs[-1][0] + runs[0][0], tol)
-        if seam is not None:
-            runs = [(runs[-1][0] + runs[0][0], seam)] + runs[1:-1]
-    return [merged for _, merged in runs]
+    out = _compact(oriented, tol)
+    if chain.closed and len(out) > 1 and out[0].kind == out[-1].kind != FREE:
+        if len(_compact([out[-1], out[0]], tol)) == 1:
+            # The seam falls inside a run: restart the loop where the last
+            # output piece starts and simplify again with all its vertices.
+            k = min(
+                range(len(oriented)),
+                key=lambda j: _dist(oriented[j].start, out[-1].start),
+            )
+            out = _compact(oriented[k:] + oriented[:k], tol)
+    return out

@@ -69,7 +69,7 @@ def get_objects_with_options(
             option = Rhino.Input.Custom.OptionDouble(values[name], low, high)
             index = go.AddOptionDouble(name, option)
             if isinstance(index, tuple):  # pythonnet returns ref arguments too.
-                index = index[0]
+                index, option = index[0], index[-1]
             doubles[index] = (name, option)
         result = go.GetMultiple(1, 0)
         if result == GetResult.Option:

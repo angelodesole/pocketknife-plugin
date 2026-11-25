@@ -22,6 +22,7 @@ for _name in [m for m in sys.modules if m.split(".")[0] == "pocketknife"]:
 
 import Rhino
 import scriptcontext as sc
+import System
 
 from pocketknife.rhinocurves import clean_curves
 from pocketknife.rhinoui import get_objects_with_options
@@ -34,16 +35,26 @@ def attribute_key(attributes):
         attributes: ``Rhino.DocObjects.ObjectAttributes``.
 
     Returns:
-        A hashable key: layer plus object-level color, linetype, print width.
+        A hashable key: layer plus color, linetype and print width, each with
+        its source; a value counts only when it comes from the object.
     """
+    sources = Rhino.DocObjects
+    from_color = attributes.ColorSource == sources.ObjectColorSource.ColorFromObject
+    from_linetype = (
+        attributes.LinetypeSource == sources.ObjectLinetypeSource.LinetypeFromObject
+    )
+    from_weight = (
+        attributes.PlotWeightSource
+        == sources.ObjectPlotWeightSource.PlotWeightFromObject
+    )
     return (
         attributes.LayerIndex,
-        int(attributes.ColorSource),
-        attributes.ObjectColor.ToArgb(),
-        int(attributes.LinetypeSource),
-        attributes.LinetypeIndex,
-        int(attributes.PlotWeightSource),
-        round(attributes.PlotWeight, 6),
+        str(attributes.ColorSource),
+        attributes.ObjectColor.ToArgb() if from_color else None,
+        str(attributes.LinetypeSource),
+        attributes.LinetypeIndex if from_linetype else None,
+        str(attributes.PlotWeightSource),
+        round(attributes.PlotWeight, 6) if from_weight else None,
     )
 
 
@@ -76,11 +87,15 @@ def main():
 
     undo = doc.BeginUndoRecord("pkCleanCurves")
     added = []
-    for curve, source in zip(result.curves, result.sources):
+    keep = set(result.unchanged) | set(result.skipped) | set(result.failed)
+    for curve, source, members in zip(result.curves, result.sources, result.members):
         attributes = objects[source].Attributes.Duplicate()
-        added.append(doc.Objects.AddCurve(curve, attributes))
+        curve_id = doc.Objects.AddCurve(curve, attributes)
+        if curve_id == System.Guid.Empty:
+            keep |= members
+        else:
+            added.append(curve_id)
     if values["DeleteInput"] == "Yes":
-        keep = set(result.unchanged) | set(result.skipped)
         for i, obj in enumerate(objects):
             if i not in keep:
                 doc.Objects.Delete(obj, True)
@@ -98,6 +113,11 @@ def main():
         f"{result.removed} duplicates removed, "
         f"{len(result.skipped)} skipped (non-planar)."
     )
+    if result.failed:
+        print(
+            f"  {len(result.failed)} input curve(s) could not be rebuilt "
+            "and were kept as they are."
+        )
     doc.Views.Redraw()
     return Rhino.Commands.Result.Success
 

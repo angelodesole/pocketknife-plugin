@@ -45,5 +45,8 @@ result = clean_curves(
 )
 if result.skipped:
     warn(f"{len(result.skipped)} non-planar curve(s) skipped.")
-C = list(result.curves) + [curves[i].DuplicateCurve() for i in result.unchanged]
+if result.failed:
+    warn(f"{len(result.failed)} curve(s) could not be rebuilt: passed through.")
+kept = result.unchanged + result.failed
+C = list(result.curves) + [curves[i].DuplicateCurve() for i in kept]
 ghenv.Component.Message = f"{max_angle:g}°"  # noqa: F821

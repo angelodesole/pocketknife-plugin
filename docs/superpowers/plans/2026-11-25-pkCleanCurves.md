@@ -276,7 +276,7 @@ def test_rectangle_keeps_four_corners():
 **Files:**
 - Move: `sandbox/pkCleanCurves.py` → `commands/pkCleanCurves.py` (bootstrap replaced by the guarded import of the other commands)
 - Modify: `tools/build_project.py` (add `pkCleanCurves` to the command list and to the GH component table with nickname `pkCleanCrv`, following the `pkMinBoundingRect` entries)
-- Create: `icons/svg/pkCleanCurves.svg` (same style as the existing icons), then run `tools/build_icons.py` for the PNGs
+- Modify: `tools/build_icons.py` (add the `pkCleanCurves` icon definition in the same style as the others; it writes the SVG and the light/dark PNGs; needs `pip install cairosvg shapely`)
 - Create: `docs/commands/pkCleanCurves.md` (same format as `docs/commands/pkMinBoundingRect.md`)
 - Modify: `README.md` command table, `CHANGELOG.md`
 

@@ -7,9 +7,9 @@ import time
 import pytest
 
 from pocketknife.curvegraph import (
-    arc_segment,
     ARC,
     LINE,
+    arc_segment,
     build_chains,
     compact_chain,
     drop_slivers,

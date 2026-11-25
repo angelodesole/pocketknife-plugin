@@ -1,0 +1,27 @@
+---
+# Yak package manifest of Pocket Knife.
+#
+# tools/build_plugin.py writes {version} from pyproject.toml and packs this
+# file with the .rhp, .gha and .rui built by RhinoCode. It replaces the
+# manifest RhinoCode generates, which has no icon and no search keywords.
+name: pocketknife
+version: {version}
+authors:
+- Angelo
+description: >
+  Free, open-source Rhino 8 commands and Grasshopper components: layer color
+  from material, copy to a mirrored layer structure, inner point (pole of
+  inaccessibility), minimum bounding box, minimum bounding rectangle and
+  orient to minimum rectangle.
+url: https://github.com/angelodesole/pocketknife-plugin
+icon: icon.png
+keywords:
+- pocketknife
+- layers
+- bounding box
+- bounding rectangle
+- inner point
+- grasshopper
+# Plug-in id (PROJECT_ID in tools/build_project.py): lets Rhino find the
+# package that provides a missing plug-in.
+- guid:9e3c1f4a-6b2d-4c8e-a5f7-3d1b9e0c7a42

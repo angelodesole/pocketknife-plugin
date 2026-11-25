@@ -12,3 +12,4 @@ project/build/
 *.rhl
 .DS_Store
 Thumbs.db
+dist/

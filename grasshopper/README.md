@@ -81,3 +81,20 @@ minimum XY rectangle is parallel to X or Y.
 |---|---|
 | `O` | Rotated geometry |
 | `X` | Transformations (to apply to other geometry too) |
+
+## pkCleanCurves
+
+Nickname `pkCleanCrv`. Cleans a messy network of planar curves (e.g. Make2D
+output): overlapping and duplicated stretches are drawn once, pieces are joined
+at their endpoints following the straightest continuation, collinear lines and
+co-circular arcs are merged. The geometry never moves beyond the document
+tolerance. Non-planar curves are skipped with a warning.
+
+| Input | Type hint | Access | Default | Meaning |
+|---|---|---|---|---|
+| `C` | Curve | list | – | Curves to clean |
+| `A` | float | item | 15 | Max deviation from straight at junctions, degrees (0-90) |
+
+| Output | Meaning |
+|---|---|
+| `C` | Clean curves |

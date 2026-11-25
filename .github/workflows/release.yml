@@ -1,0 +1,151 @@
+name: Release
+
+# Tag push (vX.Y.Z or vX.Y.Z-pre): build, GitHub release, publish on Yak.
+# Manual run: build and push to the Yak test server only (wiped every night),
+# no GitHub release. Setup and secrets: docs/releasing.md.
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, e.g. 0.1.0 (goes to the Yak test server)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RHPROJ: project/pocketknife.rhproj
+  YAK_CLI_VERSION: "0.19.1"
+  # Helper scripts only; the plug-in itself targets Rhino 8's CPython 3.9.
+  TOOLS_PYTHON: "3.15"
+
+jobs:
+  check:
+    name: Check version and changelog
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.info.outputs.version }}
+      prerelease: ${{ steps.info.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - id: info
+        env:
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+        run: >-
+          uv run --no-project --python "$TOOLS_PYTHON" tools/release_info.py "$TAG"
+          --notes release-notes.md --github-output "$GITHUB_OUTPUT"
+      - run: uvx ruff check .
+      - run: uvx ruff format --check .
+      - run: uv run --no-project --python 3.9 --with pytest pytest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+
+  build:
+    name: Build plug-in (Rhino 8)
+    needs: check
+    runs-on: windows-latest
+    env:
+      RHINO_TOKEN: ${{ secrets.RHINO_TOKEN }}
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check project file
+        shell: pwsh
+        run: |
+          if (-not (Test-Path $env:RHPROJ)) {
+            Write-Output "::error::$env:RHPROJ not found. Create it in the Rhino 8 Script Editor (see docs/releasing.md)."
+            exit 1
+          }
+      - uses: mcneel/setup-rhino3d@v2
+        with:
+          email-address: ${{ secrets.RHINO_EMAIL }}
+      - name: Build with rhinocode
+        shell: pwsh
+        run: |
+          $rhinocode = Join-Path $env:ProgramFiles "Rhino 8\System\rhinocode.exe"
+          if (-not (Test-Path $rhinocode)) {
+            Write-Output "::error::rhinocode not found at $rhinocode (needs Rhino >= 8.11)."
+            exit 1
+          }
+          & $rhinocode project build $env:RHPROJ --buildversion $env:VERSION --buildpath build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $yak = @(Get-ChildItem build -Recurse -Filter *.yak)
+          if ($yak.Count -eq 0) {
+            Write-Output "::error::The build produced no .yak package."
+            exit 1
+          }
+          $yak | Copy-Item -Destination dist
+          # Manual-install zip: .rhp, .rui and .gha for users without Yak.
+          $files = Get-ChildItem build -Recurse -Include *.rhp, *.rui, *.gha |
+            Where-Object { $_.FullName -notmatch '\\(obj|bin)\\' }
+          if ($files) {
+            Compress-Archive -Path $files.FullName -DestinationPath "dist/pocketknife-$env:VERSION-rh8.zip"
+          }
+          Get-ChildItem dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  github-release:
+    name: GitHub release
+    if: github.event_name == 'push'
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Pocket Knife ${{ needs.check.outputs.version }}
+          body_path: artifacts/release-notes/release-notes.md
+          prerelease: ${{ needs.check.outputs.prerelease == 'true' }}
+          files: artifacts/dist/*
+          fail_on_unmatched_files: true
+
+  yak:
+    name: Publish on Yak
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    # Protect this environment with required reviewers to approve each publish.
+    environment: yak
+    env:
+      YAK_TOKEN: ${{ secrets.YAK_TOKEN }}
+      YAK_SOURCE: ${{ github.event_name == 'push' && 'https://yak.rhino3d.com' || 'https://test.yak.rhino3d.com' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Install yak CLI
+        run: |
+          curl -fsSL -o yak "https://files.mcneel.com/yak/tools/${YAK_CLI_VERSION}/linux-x64/yak"
+          chmod +x yak
+      - name: Push
+        run: |
+          if [ -z "$YAK_TOKEN" ]; then
+            echo "::error::Secret YAK_TOKEN is missing (create it with 'yak login --ci')."
+            exit 1
+          fi
+          for package in dist/*.yak; do
+            echo "Pushing $package to $YAK_SOURCE"
+            ./yak push --source "$YAK_SOURCE" "$package"
+          done

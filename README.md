@@ -7,6 +7,8 @@ Grasshopper components. Written in pure Python 3 (CPython 3.9.10, the runtime
 embedded in Rhino 8).
 
 > Status: early development. Not yet published on Yak.
+>
+> Releases: [GitHub Releases](https://github.com/angelodesole/pocketknife-plugin/releases) · [Changelog](CHANGELOG.md)
 
 ## Commands
 
@@ -23,6 +25,14 @@ embedded in Rhino 8).
 
 Once published: Rhino 8 → `_PackageManager` → search **pocketknife** → Install.
 
+## Documentation
+
+- Commands: one page per command in [`docs/commands/`](docs/commands/), linked from the table above.
+- [Grasshopper components](grasshopper/README.md): inputs, outputs and setup.
+- [Icons](icons/README.md): design rules and how to regenerate them.
+- [Sandbox](sandbox/README.md): how to prototype and test a new command.
+- [Releasing](docs/releasing.md): tag-triggered build, GitHub release and Yak publishing.
+
 ## Platforms
 
 - Windows: supported.
@@ -38,7 +48,10 @@ grasshopper/       Grasshopper component scripts (see grasshopper/README.md)
 icons/svg/         icon sources
 project/           Rhino Script Editor project (.rhproj) -> .rhp/.gha/.yak
 tests/             pytest tests for Rhino-independent logic
+tools/             icon generator and release helper
 docs/commands/     one page per command
+docs/releasing.md  release process
+.github/workflows/ CI and release workflows
 ```
 
 ## License

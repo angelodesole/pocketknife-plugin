@@ -23,6 +23,12 @@ embedded in Rhino 8).
 
 Once published: Rhino 8 → `_PackageManager` → search **pocketknife** → Install.
 
+## Build
+
+See [project/README.md](project/README.md): `tools/build_project.py` (in
+Rhino) generates the `.rhproj`, `tools/build_plugin.py` builds the `.rhp`,
+`.gha` and `.yak`.
+
 ## Platforms
 
 - Windows: supported.
@@ -37,6 +43,7 @@ commands/          approved Rhino commands (one file per command)
 grasshopper/       Grasshopper component scripts (see grasshopper/README.md)
 icons/svg/         icon sources
 project/           Rhino Script Editor project (.rhproj) -> .rhp/.gha/.yak
+tools/             icon, project and plug-in build scripts
 tests/             pytest tests for Rhino-independent logic
 docs/commands/     one page per command
 ```

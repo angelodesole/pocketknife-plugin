@@ -1,6 +1,6 @@
 # pkCleanCurves — design
 
-Date: 2026-11-25. Status: approved approach (C, hybrid), design under review.
+Date: 2026-11-25. Status: approach C (hybrid) chosen; grouping option A chosen; awaiting design approval.
 
 ## Intent
 
@@ -120,10 +120,14 @@ pkCleanCurves
 Select curves ( Layers=PerLayer  MaxAngle=15  DeleteInput=Yes ):
 ```
 
-- `Layers=PerLayer` (default): groups by layer; output on the source layer.
-  `Layers=All`: one group; each output curve takes the layer, color and
-  linetype of the longest segment of its chain.
-- Object attributes in `PerLayer`: also taken from the longest segment.
+- `Layers=PerLayer` (default): groups by layer **and** by object-level
+  display attributes (object color, linetype, print width, each with its
+  source: by layer / by object). A visible and a hidden stretch on the same
+  layer are never merged, joined or treated as overlapping. Output keeps the
+  group's layer and attributes. (Decided by the user, option A.)
+- `Layers=All`: one group, attributes ignored; each output curve takes the
+  layer and attributes of the longest segment of its chain.
+- Grouping key in both modes also includes the plane (see Calls).
 - `MaxAngle`: degrees, number option, sticky. `rhinoui.get_objects_with_options`
   supports only list options today: extend it with number options
   (`AddOptionDouble`) without breaking existing callers.

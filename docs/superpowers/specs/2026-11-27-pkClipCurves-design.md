@@ -50,6 +50,23 @@ laser cutting.
 - Tolerance: document absolute tolerance; angle tolerance: document angle
   tolerance.
 
+## Calls made by Claude (check these)
+
+- **Curve type.** Curves lying in the mask plane are trimmed as they are, so
+  lines, arcs and polycurves keep their type. A curve **off** the mask plane
+  that needs cutting is first converted with `ToNurbsCurve()`, and both the
+  projection and the trimming work on that NURBS (`ToNurbsCurve` would
+  otherwise reparameterize arcs and polycurves, and the parameters found on
+  the projected copy would land in the wrong place). Its pieces are NURBS.
+  An off-plane curve that is kept or dropped whole is left untouched.
+- **Touches don't split.** After classification, neighbouring pieces of the
+  same curve with the same state (both inside or both outside, neither on
+  the boundary) are merged back into one interval. A curve inside the mask
+  that only touches the boundary at a point stays one piece, with no extra
+  cut start for the laser. If the curve ends up as a single kept interval
+  covering its whole domain, it counts as "entirely kept" and is left
+  untouched.
+
 ## Approaches
 
 | | Approach | Trade-off | Verdict |
@@ -98,9 +115,10 @@ For every curve to clip:
    quarter and three-quarter parameters and take the majority; if still
    undecided, treat the piece as on the boundary (dropped).
 6. **Keep.** Pieces whose state matches `Keep` and that are longer than tol
-   are trimmed from the **original** curve (`curve.Trim(interval)`). No
-   re-joining is needed, since splits exist only at mask events. Closed
-   curves: a kept piece spanning the seam becomes one curve.
+   are trimmed from the **original** curve (`curve.Trim(interval)`), or from
+   its NURBS for off-plane curves (see Calls). Neighbouring pieces with the
+   same state are merged first. Closed curves: a kept piece spanning the
+   seam becomes one curve.
 
 ## Rhino command
 
@@ -157,6 +175,8 @@ Warnings as balloons (non-coplanar masks, ignored masks).
 - Closed curve: piece spanning the seam is joined into one.
 - Even-odd: counts 0, 1, 2, 3 → outside, inside, outside, inside.
 - Keep filter with Inside/Outside; on-boundary pieces never kept.
+- A touch (split with the same state on both sides) leaves one piece; a
+  curve fully inside with a touch is reported as entirely kept.
 
 ## Left to the builder
 

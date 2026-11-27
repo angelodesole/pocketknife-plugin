@@ -109,9 +109,19 @@ def test_closed_all_same_state_is_whole_domain():
     assert covers_domain(merged, (0, 10))
 
 
-def test_drop_pieces_block_merge():
+def test_drop_stub_between_same_states_is_absorbed():
     pieces = [Piece(0, 4, INSIDE), Piece(4, 4.0001, DROP), Piece(4.0001, 10, INSIDE)]
+    assert merge_same_state(pieces, False, (0, 10)) == [Piece(0, 10, INSIDE)]
+
+
+def test_drop_stub_between_different_states_stays():
+    pieces = [Piece(0, 4, INSIDE), Piece(4, 4.0001, DROP), Piece(4.0001, 10, OUTSIDE)]
     assert len(merge_same_state(pieces, False, (0, 10))) == 3
+
+
+def test_drop_stub_across_seam_is_absorbed():
+    pieces = [Piece(0.5, 2, INSIDE), Piece(2, 2.0001, DROP), Piece(2.0001, 0.5, INSIDE)]
+    assert merge_same_state(pieces, True, (0, 10)) == [Piece(0, 10, INSIDE)]
 
 
 def test_whole_boundary_curve_not_kept():

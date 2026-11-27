@@ -126,13 +126,37 @@ def even_odd(count: int) -> str:
 _MERGEABLE = (INSIDE, OUTSIDE)
 
 
+def _absorb_drops(pieces: list[Piece], closed: bool) -> list[Piece]:
+    """Gives a too-short piece the state of its neighbours when they agree.
+
+    Two nearby events (a touch at a vertex, numerical noise) leave a stub too
+    short to keep; between two pieces with the same state it must not break
+    the curve.
+    """
+    n = len(pieces)
+    out = list(pieces)
+    for k, piece in enumerate(pieces):
+        if piece.state != DROP:
+            continue
+        if closed:
+            before, after = pieces[(k - 1) % n], pieces[(k + 1) % n]
+        elif 0 < k < n - 1:
+            before, after = pieces[k - 1], pieces[k + 1]
+        else:
+            continue
+        if before.state == after.state and before.state in _MERGEABLE:
+            out[k] = piece._replace(state=before.state)
+    return out
+
+
 def merge_same_state(
     pieces: list[Piece], closed: bool, domain: tuple[float, float]
 ) -> list[Piece]:
     """Merges neighbouring pieces that are both inside or both outside.
 
-    A touch of the mask boundary thus leaves the curve in one piece.
-    ``BOUNDARY`` and ``DROP`` pieces never merge.
+    A touch of the mask boundary thus leaves the curve in one piece. A
+    ``DROP`` stub between two pieces with the same state is absorbed;
+    otherwise ``BOUNDARY`` and ``DROP`` pieces never merge.
 
     Args:
         pieces: Classified pieces in domain order (seam piece last).
@@ -143,6 +167,7 @@ def merge_same_state(
         Merged pieces. A closed curve whose pieces all merge becomes one piece
         over the whole domain.
     """
+    pieces = _absorb_drops(pieces, closed)
     out: list[Piece] = []
     for piece in pieces:
         if out and out[-1].state == piece.state and piece.state in _MERGEABLE:

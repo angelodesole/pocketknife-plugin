@@ -13,9 +13,8 @@ except ImportError:
     # Development: load the library from the local clone of the repository.
     sys.path.insert(0, r"C:\dev\pocketknife-plugin\src")
 
-import math
-
 import Grasshopper
+import Rhino
 
 WARNING = Grasshopper.Kernel.GH_RuntimeMessageLevel.Warning
 
@@ -36,13 +35,20 @@ def as_list(value):
 from pocketknife.rhinoclip import clip_curves, mask_set
 from pocketknife.rhinoutil import document_tolerance
 
+
+def document_angle_tolerance():
+    """Active document angle tolerance in radians (1 degree without one)."""
+    doc = Rhino.RhinoDoc.ActiveDoc
+    return doc.ModelAngleToleranceRadians if doc is not None else 0.0174533
+
+
 # Inputs: C (curves, list), M (mask geometry, list), O (bool, keep outside).
 curves = as_list(C)  # noqa: F821
 keep_inside = not O  # noqa: F821
 
 tolerance = document_tolerance()
 I, X = [], []
-masks = mask_set(as_list(M), tolerance, math.radians(1.0))  # noqa: F821
+masks = mask_set(as_list(M), tolerance, document_angle_tolerance())  # noqa: F821
 if masks.ignored:
     warn(f"{masks.ignored} mask object(s) ignored (open or not planar).")
 if masks.error:
@@ -51,4 +57,6 @@ elif curves:
     result = clip_curves(curves, masks, tolerance, keep_inside)
     I = list(result.pieces) + [curves[i].DuplicateCurve() for i in result.untouched]
     X = list(result.origins) + list(result.untouched)
+    if result.failed:
+        warn(f"{len(result.failed)} curve(s) could not be clipped: passed through.")
 ghenv.Component.Message = "Inside" if keep_inside else "Outside"  # noqa: F821

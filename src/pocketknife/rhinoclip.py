@@ -35,6 +35,7 @@ class MaskSet(NamedTuple):
         plane: The mask plane, or None if there is no valid loop.
         ignored: Number of selected objects that are not usable masks.
         error: Empty when the mask set is usable, else the reason.
+        used: Indices of the input geometries that gave at least one loop.
     """
 
     loops: list
@@ -42,6 +43,7 @@ class MaskSet(NamedTuple):
     plane: object
     ignored: int
     error: str
+    used: list
 
 
 class ClipResult(NamedTuple):
@@ -54,6 +56,8 @@ class ClipResult(NamedTuple):
         removed: Inputs replaced by their pieces or dropped whole.
         boundary: Number of stretches dropped because they lie on a mask
             boundary.
+        failed: Inputs left as they are because Rhino could not project or
+            trim them (also listed in ``untouched``).
     """
 
     pieces: list
@@ -61,6 +65,7 @@ class ClipResult(NamedTuple):
     untouched: list
     removed: list
     boundary: int
+    failed: list
 
 
 def _box2d(curve: rg.Curve, to_plane: rg.Transform, tol: float) -> tuple:
@@ -83,8 +88,8 @@ def mask_set(geometries: Sequence, tol: float, angle_tol: float) -> MaskSet:
     Returns:
         The mask set; ``error`` says why it is unusable, if it is.
     """
-    loops, ignored = [], 0
-    for geometry in geometries:
+    loops, ignored, used = [], 0, []
+    for index, geometry in enumerate(geometries):
         if isinstance(geometry, rg.Hatch):
             found = list(geometry.Get3dCurves(True)) + list(geometry.Get3dCurves(False))
         elif isinstance(geometry, rg.Curve):
@@ -95,12 +100,14 @@ def mask_set(geometries: Sequence, tol: float, angle_tol: float) -> MaskSet:
         usable = [c for c in found if c.IsClosed and c.IsPlanar(tol)]
         if not usable:
             ignored += 1
+        else:
+            used.append(index)
         loops += usable
     if not loops:
-        return MaskSet([], [], None, ignored, "No closed planar mask shape.")
+        return MaskSet([], [], None, ignored, "No closed planar mask shape.", used)
     ok, plane = loops[0].TryGetPlane(tol)
     if not ok:
-        return MaskSet([], [], None, ignored, "No closed planar mask shape.")
+        return MaskSet([], [], None, ignored, "No closed planar mask shape.", used)
     for loop in loops[1:]:
         ok, other = loop.TryGetPlane(tol)
         if (
@@ -108,10 +115,12 @@ def mask_set(geometries: Sequence, tol: float, angle_tol: float) -> MaskSet:
             or other.ZAxis.IsParallelTo(plane.ZAxis, angle_tol) == 0
             or abs(plane.DistanceTo(loop.PointAtStart)) > tol
         ):
-            return MaskSet([], [], None, ignored, "Mask shapes are not on one plane.")
+            return MaskSet(
+                [], [], None, ignored, "Mask shapes are not on one plane.", used
+            )
     to_plane = rg.Transform.PlaneToPlane(plane, rg.Plane.WorldXY)
     boxes = [_box2d(loop, to_plane, 0.0) for loop in loops]
-    return MaskSet(loops, boxes, plane, ignored, "")
+    return MaskSet(loops, boxes, plane, ignored, "", used)
 
 
 def _in_plane(curve: rg.Curve, plane: rg.Plane, tol: float) -> bool:
@@ -203,7 +212,7 @@ def clip_curves(
     flatten = rg.Transform.PlanarProjection(plane)
     index = _Index(masks.boxes)
     wanted = "inside" if keep_inside else "outside"
-    result = ClipResult([], [], [], [], 0)
+    result = ClipResult([], [], [], [], 0, [])
     boundary = 0
     for k, curve in enumerate(curves):
         if curve is None:
@@ -212,8 +221,11 @@ def clip_curves(
             work, proj = curve, curve
         else:
             work = curve.ToNurbsCurve()
-            proj = work.Duplicate()
-            proj.Transform(flatten)
+            proj = work.DuplicateCurve() if work is not None else None
+            if proj is None or not proj.Transform(flatten):
+                result.untouched.append(k)
+                result.failed.append(k)
+                continue
         candidates = index.candidates(_box2d(proj, to_plane, tol))
         if proj.GetLength() <= tol:
             state = _state(proj.PointAtStart, candidates, masks, to_plane, tol)
@@ -226,7 +238,11 @@ def clip_curves(
                 continue
             for event in events:
                 if event.IsOverlap:
-                    overlaps.append((event.OverlapA.Min, event.OverlapA.Max))
+                    interval = event.OverlapA
+                    if curve.IsClosed:
+                        overlaps.append((interval.T0, interval.T1))
+                    else:
+                        overlaps.append((interval.Min, interval.Max))
                 else:
                     splits.append(event.ParameterA)
         domain = (proj.Domain.Min, proj.Domain.Max)
@@ -252,6 +268,7 @@ def clip_curves(
         if any(c is None or not c.IsValid for c in trimmed):
             # Never lose geometry: leave the curve as it is.
             result.untouched.append(k)
+            result.failed.append(k)
             continue
         result.removed.append(k)
         result.pieces.extend(trimmed)

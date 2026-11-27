@@ -98,3 +98,22 @@ tolerance. Non-planar curves are skipped with a warning.
 | Output | Meaning |
 |---|---|
 | `C` | Clean curves |
+
+## pkClipCurves
+
+Nickname `pkClip`. Clips curves with mask shapes like a clipping mask: curves
+are cut where they cross the mask boundaries and only the pieces inside (or
+outside) are kept. Even-odd rule: nested shapes are holes. Stretches lying on
+a mask boundary are always dropped. Curves off the mask plane are clipped by
+their projection along the mask normal.
+
+| Input | Type hint | Access | Default | Meaning |
+|---|---|---|---|---|
+| `C` | Curve | list | – | Curves to clip |
+| `M` | GeometryBase | list | – | Mask shapes: closed planar curves or hatches, on one plane |
+| `O` | bool | item | False | True: keep outside. False: keep inside |
+
+| Output | Meaning |
+|---|---|
+| `I` | Kept pieces |
+| `X` | Index in `C` of the curve each piece comes from |

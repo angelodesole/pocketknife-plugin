@@ -109,3 +109,77 @@ def split_domain(
         on_boundary = any(_in_interval(mid, a, b) for a, b in overlaps)
         out.append(piece._replace(state=BOUNDARY if on_boundary else ""))
     return out
+
+
+def even_odd(count: int) -> str:
+    """Even-odd rule: inside when an odd number of mask loops contain a point.
+
+    Args:
+        count: Number of mask loops containing the point.
+
+    Returns:
+        ``INSIDE`` or ``OUTSIDE``.
+    """
+    return INSIDE if count % 2 else OUTSIDE
+
+
+_MERGEABLE = (INSIDE, OUTSIDE)
+
+
+def merge_same_state(
+    pieces: list[Piece], closed: bool, domain: tuple[float, float]
+) -> list[Piece]:
+    """Merges neighbouring pieces that are both inside or both outside.
+
+    A touch of the mask boundary thus leaves the curve in one piece.
+    ``BOUNDARY`` and ``DROP`` pieces never merge.
+
+    Args:
+        pieces: Classified pieces in domain order (seam piece last).
+        closed: True for a closed curve.
+        domain: Curve domain ``(min, max)``.
+
+    Returns:
+        Merged pieces. A closed curve whose pieces all merge becomes one piece
+        over the whole domain.
+    """
+    out: list[Piece] = []
+    for piece in pieces:
+        if out and out[-1].state == piece.state and piece.state in _MERGEABLE:
+            out[-1] = out[-1]._replace(t1=piece.t1)
+        else:
+            out.append(piece)
+    if closed and len(out) > 1:
+        first, last = out[0], out[-1]
+        if first.state == last.state and first.state in _MERGEABLE:
+            out = out[1:-1] + [Piece(last.t0, first.t1, first.state)]
+    if closed and len(out) == 1 and out[0].state in _MERGEABLE:
+        out = [Piece(domain[0], domain[1], out[0].state)]
+    return out
+
+
+def keep_pieces(pieces: list[Piece], keep_inside: bool) -> list[Piece]:
+    """Selects the pieces to keep.
+
+    Args:
+        pieces: Classified pieces.
+        keep_inside: True to keep ``INSIDE`` pieces, False for ``OUTSIDE``.
+
+    Returns:
+        The kept pieces, in order.
+    """
+    wanted = INSIDE if keep_inside else OUTSIDE
+    return [p for p in pieces if p.state == wanted]
+
+
+def covers_domain(pieces: list[Piece], domain: tuple[float, float]) -> bool:
+    """True if a single piece spans the whole domain (curve left whole).
+
+    Args:
+        pieces: Merged pieces.
+        domain: Curve domain ``(min, max)``.
+
+    Returns:
+        Whether the curve stays in one piece.
+    """
+    return len(pieces) == 1 and pieces[0].t0 == domain[0] and pieces[0].t1 == domain[1]

@@ -1,6 +1,17 @@
 """Tests for pocketknife.intervals."""
 
-from pocketknife.intervals import BOUNDARY, Piece, split_domain
+from pocketknife.intervals import (
+    BOUNDARY,
+    DROP,
+    INSIDE,
+    OUTSIDE,
+    Piece,
+    covers_domain,
+    even_odd,
+    keep_pieces,
+    merge_same_state,
+    split_domain,
+)
 
 
 def test_one_crossing_gives_two_pieces():
@@ -61,3 +72,49 @@ def test_overlap_wrapping_the_seam():
         Piece(5, 8, ""),
         Piece(8, 1, BOUNDARY),
     ]
+
+
+def test_even_odd():
+    assert [even_odd(c) for c in range(4)] == [OUTSIDE, INSIDE, OUTSIDE, INSIDE]
+
+
+def test_touch_merges_back():
+    pieces = [Piece(0, 4, INSIDE), Piece(4, 10, INSIDE)]
+    merged = merge_same_state(pieces, False, (0, 10))
+    assert merged == [Piece(0, 10, INSIDE)]
+    assert covers_domain(merged, (0, 10))
+
+
+def test_boundary_never_merged_nor_kept():
+    pieces = [Piece(0, 3, INSIDE), Piece(3, 6, BOUNDARY), Piece(6, 10, INSIDE)]
+    merged = merge_same_state(pieces, False, (0, 10))
+    assert len(merged) == 3
+    assert not covers_domain(merged, (0, 10))
+    assert keep_pieces(merged, True) == [Piece(0, 3, INSIDE), Piece(6, 10, INSIDE)]
+    assert keep_pieces(merged, False) == []
+
+
+def test_closed_merge_across_seam():
+    pieces = [Piece(2, 7, OUTSIDE), Piece(7, 9, INSIDE), Piece(9, 2, OUTSIDE)]
+    assert merge_same_state(pieces, True, (0, 10)) == [
+        Piece(7, 9, INSIDE),
+        Piece(9, 7, OUTSIDE),
+    ]
+
+
+def test_closed_all_same_state_is_whole_domain():
+    pieces = [Piece(2, 7, INSIDE), Piece(7, 2, INSIDE)]
+    merged = merge_same_state(pieces, True, (0, 10))
+    assert merged == [Piece(0, 10, INSIDE)]
+    assert covers_domain(merged, (0, 10))
+
+
+def test_drop_pieces_block_merge():
+    pieces = [Piece(0, 4, INSIDE), Piece(4, 4.0001, DROP), Piece(4.0001, 10, INSIDE)]
+    assert len(merge_same_state(pieces, False, (0, 10))) == 3
+
+
+def test_whole_boundary_curve_not_kept():
+    merged = merge_same_state([Piece(0, 10, BOUNDARY)], True, (0, 10))
+    assert keep_pieces(merged, True) == []
+    assert keep_pieces(merged, False) == []

@@ -46,10 +46,19 @@ afterwards in Options > Plug-ins before installing the published package.
 
 ## Publish
 
+`tools/release.py` publishes the build (no build in CI); see
+[docs/releasing.md](../docs/releasing.md) for the whole release.
+
 ```
-"C:\Program Files\Rhino 8\System\Yak.exe" login
-"C:\Program Files\Rhino 8\System\Yak.exe" push dist\<package>.yak
+python tools\release.py check
+python tools\release.py test
+python tools\release.py publish
 ```
+
+`check` checks versions, `CHANGELOG.md`, the `.yak` and git and prints the
+plan; `test` pushes the `.yak` to test.yak.rhino3d.com; `publish` tags
+`vX.Y.Z`, creates the GitHub release (notes from `CHANGELOG.md`, the `.yak` and
+a zip of `.rhp`/`.rui`/`.gha`) and pushes to Yak.
 
 ## Fixed ids
 

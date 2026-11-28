@@ -12,7 +12,7 @@ icons changed. Then, on Windows with Rhino 8.11 or later::
 
     python tools/build_plugin.py
 
-Publish with ``yak push dist/<package>.yak`` (after ``yak login``).
+Publish with ``python tools/release.py publish`` (see ``docs/releasing.md``).
 """
 
 from __future__ import annotations

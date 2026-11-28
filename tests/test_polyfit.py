@@ -1,11 +1,16 @@
 """Tests for pocketknife.polyfit."""
 
 import math
+import time
 
 import pytest
 
 from pocketknife.polyfit import (
+    bspline_point,
     dedupe,
+    fit_free,
+    fit_with,
+    max_deviation,
     find_corners,
     partition,
     turning_angles,
@@ -152,3 +157,61 @@ def test_open_polyline_with_corner_two_lines():
     pts = [(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0), (3, 1, 0), (3, 2, 0), (3, 3, 0)]
     runs = _partition(pts, False)
     assert [(r.kind, r.start, r.end) for r in runs] == [("line", 0, 3), ("line", 3, 6)]
+
+
+def test_fit_free_cubic_few_points():
+    pts = cubic_samples()
+    kind, (degree, ctrl, knots) = fit_free(pts, TOL, None, None)
+    assert kind == "nurbs" and degree == 3
+    assert len(ctrl) <= 8
+    assert max_deviation(pts, degree, ctrl, knots) <= TOL
+    assert ctrl[0] == pts[0] and ctrl[-1] == pts[-1]
+    assert len(knots) == len(ctrl) + degree + 1
+
+
+def test_fit_is_minimal():
+    pts = cubic_samples()
+    _, (degree, ctrl, knots) = fit_free(pts, TOL, None, None)
+    fewer = fit_with(pts, len(ctrl) - 1, None, None)
+    assert fewer is None or max_deviation(pts, *fewer) > TOL
+
+
+def test_end_tangents_respected():
+    pts = cubic_samples()
+    k = 1.0 / math.hypot(1.0, 5.75)
+    tangent = (k, 5.75 * k, 0.0)  # Direction of (t, t^3 - t) at t = -1.5.
+    _, (degree, ctrl, knots) = fit_free(pts, TOL, tangent, None)
+    d = (ctrl[1][0] - ctrl[0][0], ctrl[1][1] - ctrl[0][1], ctrl[1][2] - ctrl[0][2])
+    cross = d[0] * tangent[1] - d[1] * tangent[0]
+    assert abs(cross) < 1e-9 and d[0] * tangent[0] + d[1] * tangent[1] > 0
+
+
+def test_bspline_point_ends():
+    pts = cubic_samples()
+    _, (degree, ctrl, knots) = fit_free(pts, TOL, None, None)
+    assert bspline_point(degree, ctrl, knots, 0.0) == pytest.approx(pts[0])
+    assert bspline_point(degree, ctrl, knots, 1.0) == pytest.approx(pts[-1])
+
+
+def test_three_points_quadratic():
+    pts = [(0, 0, 0), (1, 1, 0), (2, 0, 0)]
+    kind, (degree, ctrl, knots) = fit_free(pts, TOL, None, None)
+    assert kind == "nurbs" and degree == 2
+    assert max_deviation(pts, degree, ctrl, knots) <= TOL
+
+
+def test_two_points_line():
+    kind, (degree, ctrl, knots) = fit_free([(0, 0, 0), (1, 2, 3)], TOL, None, None)
+    assert kind == "nurbs" and degree == 1 and len(ctrl) == 2
+
+
+def test_large_run_speed():
+    pts = [
+        (t, math.sin(3 * t) + 0.2 * t * t, 0.0)
+        for t in [k * 6.0 / 499 for k in range(500)]
+    ]
+    start = time.perf_counter()
+    kind, data = fit_free(pts, TOL, None, None)
+    assert time.perf_counter() - start < 2.0
+    assert kind == "nurbs"
+    assert max_deviation(pts, *data) <= TOL

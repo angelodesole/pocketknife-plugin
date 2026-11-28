@@ -445,3 +445,368 @@ def _partition_stretch(
             p = best_line
     flush(last)
     return out
+
+
+# B-spline fitting ------------------------------------------------------------
+
+
+def centripetal_params(points: Sequence[Vec3]) -> list[float]:
+    """Centripetal parameters of points, from 0 to 1.
+
+    Args:
+        points: At least two distinct points.
+
+    Returns:
+        One parameter per point.
+    """
+    steps = [math.sqrt(_dist(a, b)) for a, b in zip(points, points[1:])]
+    total = sum(steps) or 1.0
+    out, acc = [0.0], 0.0
+    for s in steps:
+        acc += s
+        out.append(acc / total)
+    out[-1] = 1.0
+    return out
+
+
+def averaged_knots(params: Sequence[float], count: int, degree: int) -> list[float]:
+    """Clamped knot vector for a least-squares fit (Piegl-Tiller 9.68-9.69).
+
+    Args:
+        params: Parameters of the fitted points.
+        count: Number of control points.
+        degree: Curve degree.
+
+    Returns:
+        The full knot vector, ``count + degree + 1`` values.
+    """
+    m = len(params)
+    inner = []
+    d = m / (count - degree)
+    for j in range(1, count - degree):
+        i = int(j * d)
+        a = j * d - i
+        inner.append((1.0 - a) * params[i - 1] + a * params[i])
+    return [0.0] * (degree + 1) + inner + [1.0] * (degree + 1)
+
+
+def _span(degree: int, knots: Sequence[float], count: int, u: float) -> int:
+    if u >= knots[count]:
+        return count - 1
+    lo, hi = degree, count
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if u < knots[mid]:
+            hi = mid
+        else:
+            lo = mid
+    return lo
+
+
+def _basis(degree: int, knots: Sequence[float], span: int, u: float) -> list[float]:
+    """Non-zero basis functions at ``u`` (Piegl-Tiller A2.2)."""
+    n = [1.0] + [0.0] * degree
+    left = [0.0] * (degree + 1)
+    right = [0.0] * (degree + 1)
+    for j in range(1, degree + 1):
+        left[j] = u - knots[span + 1 - j]
+        right[j] = knots[span + j] - u
+        saved = 0.0
+        for r in range(j):
+            denom = right[r + 1] + left[j - r]
+            temp = n[r] / denom if denom != 0.0 else 0.0
+            n[r] = saved + right[r + 1] * temp
+            saved = left[j - r] * temp
+        n[j] = saved
+    return n
+
+
+def bspline_point(
+    degree: int, ctrl: Sequence[Vec3], knots: Sequence[float], u: float
+) -> Vec3:
+    """Point of a non-rational B-spline.
+
+    Args:
+        degree: Degree.
+        ctrl: Control points.
+        knots: Full clamped knot vector.
+        u: Parameter in [0, 1].
+
+    Returns:
+        The point.
+    """
+    span = _span(degree, knots, len(ctrl), u)
+    basis = _basis(degree, knots, span, u)
+    x = y = z = 0.0
+    for k, b in enumerate(basis):
+        p = ctrl[span - degree + k]
+        x += b * p[0]
+        y += b * p[1]
+        z += b * p[2]
+    return (x, y, z)
+
+
+def _derivative(degree: int, ctrl: Sequence[Vec3], knots: Sequence[float]):
+    """Derivative curve ``(degree - 1, ctrl, knots)`` of a B-spline."""
+    if degree == 0:
+        return 0, [(0.0, 0.0, 0.0)], [0.0, 1.0]
+    dctrl = []
+    for i in range(len(ctrl) - 1):
+        span = knots[i + degree + 1] - knots[i + 1]
+        f = degree / span if span > 0.0 else 0.0
+        dctrl.append(_scale(_sub(ctrl[i + 1], ctrl[i]), f))
+    return degree - 1, dctrl, list(knots[1:-1])
+
+
+def _project(
+    points: Sequence[Vec3], curve, params: Sequence[float], steps: int = 4
+) -> tuple[list[float], float]:
+    """Newton projection of points on a curve, starting from ``params``.
+
+    Returns:
+        ``(parameters of the closest points, largest distance)``.
+    """
+    degree, ctrl, knots = curve
+    d1 = _derivative(degree, ctrl, knots)
+    d2 = _derivative(*d1) if d1[0] > 0 else (0, [(0.0, 0.0, 0.0)], [0.0, 1.0])
+    out, worst = [], 0.0
+    for q, u in zip(points, params):
+        best_u = u
+        c = bspline_point(degree, ctrl, knots, u)
+        best = _dist(c, q)
+        t = u
+        for _ in range(steps):
+            c = bspline_point(degree, ctrl, knots, t)
+            c1 = bspline_point(*d1, t)
+            c2 = bspline_point(*d2, t) if d2[1] else (0.0, 0.0, 0.0)
+            diff = _sub(c, q)
+            f = _dot(diff, c1)
+            df = _dot(c1, c1) + _dot(diff, c2)
+            if df <= 0.0:
+                break
+            t = min(1.0, max(0.0, t - f / df))
+            d = _dist(bspline_point(degree, ctrl, knots, t), q)
+            if d < best:
+                best, best_u = d, t
+        out.append(best_u)
+        worst = max(worst, best)
+    return out, worst
+
+
+def max_deviation(
+    points: Sequence[Vec3], degree: int, ctrl: Sequence[Vec3], knots: Sequence[float]
+) -> float:
+    """Largest distance from the points to the curve.
+
+    Args:
+        points: Points that were fitted.
+        degree: Degree.
+        ctrl: Control points.
+        knots: Full clamped knot vector.
+
+    Returns:
+        The maximum distance.
+    """
+    curve = (degree, ctrl, knots)
+    params = centripetal_params(points)
+    # Start each projection from the best of a coarse sampling.
+    samples = [k / 64 for k in range(65)]
+    pts = [bspline_point(degree, ctrl, knots, u) for u in samples]
+    starts = []
+    for q, u in zip(points, params):
+        k = min(range(65), key=lambda i: _dist(pts[i], q))
+        starts.append(
+            samples[k]
+            if _dist(pts[k], q) < _dist(bspline_point(degree, ctrl, knots, u), q)
+            else u
+        )
+    return _project(points, curve, starts)[1]
+
+
+MAX_CORRECTIONS = 40
+
+
+def fit_with(
+    points: Sequence[Vec3],
+    count: int,
+    t_start: Vec3 | None,
+    t_end: Vec3 | None,
+    tol: float | None = None,
+):
+    """Least-squares B-spline with fixed ends and optional end tangents.
+
+    Parameters are corrected by projecting the points on each fit (Hoschek)
+    until the fit stops improving or, with ``tol``, is clearly in or out.
+
+    Args:
+        points: Points to fit (at least two).
+        count: Number of control points.
+        t_start: Unit tangent direction at the start, or None.
+        t_end: Unit tangent direction at the end, or None.
+        tol: Optional tolerance, used only to stop the correction early.
+
+    Returns:
+        ``(degree, ctrl, knots)``, or None if the system is singular.
+    """
+    return _fit_core(points, count, t_start, t_end, tol)[0]
+
+
+def _fit_core(points, count, t_start, t_end, tol):
+    """``fit_with`` that also returns the deviation of its best fit."""
+    count = max(2, count)
+    degree = min(3, count - 1)
+    params = centripetal_params(points)
+    knots = averaged_knots(params, count, degree)
+    best, best_dev, previous = None, math.inf, math.inf
+    for it in range(MAX_CORRECTIONS + 1):
+        fit = _solve_fit(points, params, knots, count, degree, t_start, t_end)
+        if fit is None:
+            return best, best_dev
+        params, dev = _project(points, fit, params, steps=1)
+        if dev < best_dev:
+            best, best_dev = fit, dev
+        if tol is not None and dev <= 0.5 * tol:
+            break
+        rate = dev / previous if previous > 0.0 else 0.0
+        if rate > 0.97:
+            break
+        if tol is not None and it >= 2:
+            # Linear convergence: stop if even the remaining iterations at
+            # this rate cannot bring the deviation within tolerance.
+            if dev * rate ** (MAX_CORRECTIONS - it) > tol:
+                break
+        previous = dev
+    return best, best_dev
+
+
+def _solve_fit(points, params, knots, count, degree, t_start, t_end):
+    """One least-squares solve at fixed parameters and knots."""
+    p0, pn = points[0], points[-1]
+    use_tangents = count >= 4
+    # Each control point is (constant, [(var, coeff_vector)]).
+    var = 0
+    layout = []
+    for i in range(count):
+        if i == 0:
+            layout.append(("fixed", p0))
+        elif i == count - 1:
+            layout.append(("fixed", pn))
+        elif i == 1 and use_tangents and t_start is not None:
+            layout.append(("ray", p0, t_start, var))
+            var += 1
+        elif i == count - 2 and use_tangents and t_end is not None:
+            layout.append(("ray", pn, _scale(t_end, -1.0), var))
+            var += 1
+        else:
+            layout.append(("free", var))
+            var += 3
+    if var == 0:
+        return degree, [p0, pn], knots
+    ata = [[0.0] * var for _ in range(var)]
+    atb = [0.0] * var
+    for q, u in zip(points, params):
+        span = _span(degree, knots, count, u)
+        basis = _basis(degree, knots, span, u)
+        for c in range(3):
+            terms: dict[int, float] = {}
+            const = 0.0
+            for k, b in enumerate(basis):
+                if b == 0.0:
+                    continue
+                entry = layout[span - degree + k]
+                if entry[0] == "fixed":
+                    const += b * entry[1][c]
+                elif entry[0] == "ray":
+                    const += b * entry[1][c]
+                    terms[entry[3]] = terms.get(entry[3], 0.0) + b * entry[2][c]
+                else:
+                    terms[entry[1] + c] = terms.get(entry[1] + c, 0.0) + b
+            rhs = q[c] - const
+            items = list(terms.items())
+            for i, ci in items:
+                atb[i] += ci * rhs
+                row = ata[i]
+                for j, cj in items:
+                    row[j] += ci * cj
+    sol = solve(ata, atb)
+    if sol is None:
+        return None
+    ctrl = []
+    for entry in layout:
+        if entry[0] == "fixed":
+            ctrl.append(entry[1])
+        elif entry[0] == "ray":
+            ctrl.append(_add(entry[1], _scale(entry[2], sol[entry[3]])))
+        else:
+            v = entry[1]
+            ctrl.append((sol[v], sol[v + 1], sol[v + 2]))
+    return degree, ctrl, knots
+
+
+def _search(points, tol, t_start, t_end):
+    """Smallest control-point count whose fit is within tol, or None."""
+    m = len(points)
+    cache = {}
+
+    def ok(n: int):
+        # The projection distance of the fit is an upper bound of the true
+        # deviation, so a pass here is a real pass.
+        if n not in cache:
+            fit, dev = _fit_core(points, n, t_start, t_end, tol)
+            cache[n] = fit if fit is not None and dev <= tol else None
+        return cache[n]
+
+    low, high = 3, None
+    n = 4
+    while n < m:
+        if ok(n):
+            high = n
+            break
+        low = n
+        n *= 2
+    if high is None:
+        if not ok(m):
+            return None
+        high = m
+    while high - low > 1:
+        mid = (low + high) // 2
+        if ok(mid):
+            high = mid
+        else:
+            low = mid
+    while high > 4 and ok(high - 1):
+        high -= 1
+    return ok(high)
+
+
+def fit_free(
+    points: Sequence[Vec3], tol: float, t_start: Vec3 | None, t_end: Vec3 | None
+) -> tuple[str, tuple]:
+    """Fits a free run with the fewest control points within tolerance.
+
+    Args:
+        points: The run's vertices (at least two).
+        tol: Tolerance at the vertices.
+        t_start: Unit tangent direction imposed at the start, or None.
+        t_end: Unit tangent direction imposed at the end, or None.
+
+    Returns:
+        ``("nurbs", (degree, ctrl, knots))`` or, if nothing fits,
+        ``("polyline", (points,))``.
+    """
+    pts = list(points)
+    m = len(pts)
+    if m == 2:
+        return "nurbs", (1, pts, [0.0, 0.0, 1.0, 1.0])
+    if m == 3:
+        fit = fit_with(pts, 3, None, None)
+        if fit is not None and max_deviation(pts, *fit) <= tol:
+            return "nurbs", fit
+        return "polyline", (pts,)
+    for ts, te in ((t_start, t_end), (None, None)):
+        fit = _search(pts, tol, ts, te)
+        if fit is not None:
+            return "nurbs", fit
+        if ts is None and te is None:
+            break
+    return "polyline", (pts,)

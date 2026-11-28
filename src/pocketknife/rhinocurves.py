@@ -379,6 +379,9 @@ def clean_curves(
     tol: float,
     max_angle_deg: float,
     angle_tol: float = math.radians(1.0),
+    *,
+    join_tol: float | None = None,
+    split_touches: bool = False,
 ) -> CleanResult:
     """Cleans a network of planar curves (see the module docstring).
 
@@ -388,10 +391,17 @@ def clean_curves(
         tol: Absolute tolerance.
         max_angle_deg: Maximum deviation from straight at junctions, degrees.
         angle_tol: Angle tolerance in radians for coplanarity.
+        join_tol: Distance within which endpoints are joined into chains;
+            defaults to ``tol``. Slivers, overlaps, compaction and assembly
+            keep using ``tol``.
+        split_touches: If True, chains also split where a curve touches
+            another (see ``build_chains``).
 
     Returns:
         The cleaning result.
     """
+    if join_tol is None:
+        join_tol = tol
     groups, skipped = _group(curves, keys, tol, angle_tol)
     result_curves, sources, members_out, unchanged, failed = [], [], [], [], []
     removed_total = 0
@@ -410,7 +420,9 @@ def clean_curves(
         removed_total += removed + count
         touched |= {s.source for s in (before - Counter(segments))}
         touched |= {s.source for s in (Counter(segments) - before)}
-        for chain in build_chains(segments, tol, max_angle):
+        for chain in build_chains(
+            segments, join_tol, max_angle, split_touches=split_touches
+        ):
             chain_sources = {segments[i].source for i, _ in chain.items}
             longest = max(chain.items, key=lambda item: segments[item[0]].length)
             source = segments[longest[0]].source

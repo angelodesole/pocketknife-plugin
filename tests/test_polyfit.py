@@ -354,3 +354,95 @@ def test_rebuild_pieces_share_end_vertices():
     pieces = rebuild(rounded_rectangle(), True, TOL, CORNER)
     for a, b in zip(pieces, pieces[1:] + pieces[:1]):
         assert sample_piece(a)[-1] == pytest.approx(sample_piece(b)[0], abs=1e-9)
+
+
+# Regression tests from the final review --------------------------------------
+
+
+def _corner_angle_at(pieces, closed=True):
+    """Angle between the end tangent of the last piece and the first start."""
+    return _angle_gap(_tangent_at_end(pieces[-1]), _tangent_at_start(pieces[0]))
+
+
+def test_single_corner_ring_keeps_its_corner():
+    import random
+
+    rng = random.Random(3)
+    ts = sorted(rng.uniform(0.05, 2 * math.pi - 0.05) for _ in range(40))
+    pts = [(0.0, 0.0, 0.0)] + [
+        (4 * math.sin(t / 2), 1.5 * math.sin(t), 0.0) for t in ts
+    ]
+    pieces = rebuild(pts, True, TOL, CORNER)
+    assert_within(pts, pieces)
+    assert _corner_angle_at(pieces) > math.radians(60)
+
+
+def _irregular_arc(center, r, degs):
+    return [
+        (
+            center[0] + r * math.cos(math.radians(d)),
+            center[1] + r * math.sin(math.radians(d)),
+            0.0,
+        )
+        for d in degs
+    ]
+
+
+def test_free_fit_does_not_loop_between_vertices():
+    a = _irregular_arc((0, 0), 2, [270, 279, 300, 322, 336, 351, 360])
+    b = [(2.0, 8.0, 0.0)]
+    c = _irregular_arc((0, 8), 2, [0, 13, 27, 48, 71, 90])
+    pts = a + b + c[1:]
+    pieces = rebuild(pts, False, 0.005, CORNER)
+    assert_within(pts, pieces, 0.005)
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    for piece in pieces:
+        for q in sample_piece(piece, 400):
+            assert min(xs) - 1 <= q[0] <= max(xs) + 1
+            assert min(ys) - 1 <= q[1] <= max(ys) + 1
+
+
+def test_seam_inside_arc_still_four_lines_four_arcs():
+    pts = rounded_rectangle(w=10.0, h=6.0, r=2.0, line_edges=1, arc_facets=6)
+    pts = pts[1:] + pts[:1]  # Start at the first vertex inside an arc.
+    pieces = rebuild(pts, True, TOL, CORNER)
+    assert sorted(p[0] for p in pieces) == ["arc"] * 4 + ["line"] * 4
+
+
+def test_dense_inflection_has_no_line():
+    pts = [(t, t**3 - t, 0.0) for t in [-1.5 + 3.0 * k / 500 for k in range(501)]]
+    runs = _partition(pts, False)
+    assert [r.kind for r in runs] == ["free"]
+
+
+def test_dense_ellipse_has_no_arcs():
+    pts = [
+        (10 * math.cos(2 * math.pi * k / 200), 9 * math.sin(2 * math.pi * k / 200), 0.0)
+        for k in range(200)
+    ]
+    runs = _partition(pts, True)
+    assert "arc" not in [r.kind for r in runs]
+
+
+def test_three_vertex_free_run_follows_neighbour_tangents():
+    pts = [(0.0, 0.0, 0.0), (0.5, -0.5, 0.0), (1.0, 0.0, 0.0)]
+    kind, (degree, ctrl, knots) = fit_free(pts, 0.01, (0.0, -1.0, 0.0), (0.0, 1.0, 0.0))
+    assert kind == "nurbs" and degree == 3
+    assert max_deviation(pts, degree, ctrl, knots) <= 0.01
+    start = (ctrl[1][0] - ctrl[0][0], ctrl[1][1] - ctrl[0][1])
+    end = (ctrl[-1][0] - ctrl[-2][0], ctrl[-1][1] - ctrl[-2][1])
+    assert abs(start[0]) < 1e-9 and start[1] < 0
+    assert abs(end[0]) < 1e-9 and end[1] > 0
+
+
+def test_clockwise_ring_gives_clockwise_circle():
+    pts = list(reversed(polygon(24)))
+    ((kind, (center, normal, radius, start)),) = rebuild(pts, True, TOL, CORNER)
+    assert kind == "circle" and normal[2] < 0
+
+
+def test_forced_corner_is_kept():
+    pts = turtle([0, 0, 0, 3, 0, 0, 0], step=1.0)  # 3 degree kink at vertex 4
+    pieces = rebuild(pts, False, TOL, CORNER, forced_corners=[4])
+    assert [p[0] for p in pieces] == ["line", "line"]

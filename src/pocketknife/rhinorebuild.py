@@ -20,40 +20,49 @@ def _pt(p) -> rg.Point3d:
     return rg.Point3d(p[0], p[1], p[2])
 
 
+ARC_FACET = math.radians(5.0)
+KINK = math.radians(0.1)
+
+
 def _span_vertices(span: rg.Curve, tol: float) -> list:
-    """Vertices of a smooth span, evenly spaced by length.
+    """Vertices of a smooth span.
 
-    Even spacing keeps arc spans uniformly faceted, so they are recognised as
-    arcs; the count comes from an adaptive polyline at ``tol / 10``.
+    Straight spans give their ends. Arc spans are divided evenly (facets of
+    at most 5 degrees), so they are recognised as arcs. Free spans use an
+    adaptive polyline at ``tol / 10``, dense where the curve bends.
     """
-    approx = span.ToPolyline(0, 0, 0.0, 0.0, 0.0, tol / 10.0, 0.0, 0.0, True)
-    count = 8
-    if approx is not None:
-        count = max(count, approx.PointCount - 1)
-    params = span.DivideByCount(count, True)
-    if not params:
+    if span.IsLinear(tol):
         return [_tuple(span.PointAtStart), _tuple(span.PointAtEnd)]
-    return [_tuple(span.PointAt(t)) for t in params] + [_tuple(span.PointAtEnd)]
+    ok, arc = span.TryGetArc(tol)
+    if ok:
+        count = max(4, int(math.ceil(arc.AngleRadians / ARC_FACET)))
+        params = span.DivideByCount(count, True)
+        if params:
+            return [_tuple(span.PointAt(t)) for t in params] + [_tuple(span.PointAtEnd)]
+    approx = span.ToPolyline(0, 0, 0.0, 0.0, 0.0, tol / 10.0, 0.0, 0.0, True)
+    if approx is None:
+        return [_tuple(span.PointAtStart), _tuple(span.PointAtEnd)]
+    return [_tuple(approx.Point(i)) for i in range(approx.PointCount)]
 
 
-def curve_vertices(curve: rg.Curve, tol: float) -> tuple[list, bool]:
+def curve_vertices(curve: rg.Curve, tol: float) -> tuple[list, bool, list]:
     """Vertices of a curve for rebuilding.
 
-    Polylines (and degree-1 or line-only curves) give their vertices. Other
-    curves are split at their kinks, which become corners, and each smooth
-    span is sampled evenly.
+    Polylines give their vertices. Other curves are split at their C1
+    discontinuities; each smooth span is sampled by ``_span_vertices``, and
+    every split where the tangent really turns (a kink) is a forced corner.
 
     Args:
         curve: Input curve.
         tol: Rebuild tolerance.
 
     Returns:
-        ``(vertices, closed)``.
+        ``(vertices, closed, forced corner indices)``.
     """
     closed = curve.IsClosed
     ok, polyline = curve.TryGetPolyline()
     if ok:
-        return [_tuple(p) for p in polyline], closed
+        return [_tuple(p) for p in polyline], closed, []
     domain = curve.Domain
     cuts = [domain.Min]
     t = domain.Min
@@ -65,16 +74,27 @@ def curve_vertices(curve: rg.Curve, tol: float) -> tuple[list, bool]:
             break
         cuts.append(t)
     cuts.append(domain.Max)
-    vertices = []
+    vertices, forced, previous = [], [], None
     for a, b in zip(cuts, cuts[1:]):
         if b - a <= 0.0:
             continue
         span = curve.Trim(a, b)
         if span is None:
             continue
+        if previous is not None:
+            turn = rg.Vector3d.VectorAngle(previous.TangentAtEnd, span.TangentAtStart)
+            if turn > KINK:
+                forced.append(len(vertices) - 1)
         pts = _span_vertices(span, tol)
         vertices += pts if not vertices else pts[1:]
-    return vertices, closed
+        previous = span
+    if closed and previous is not None and vertices:
+        first = curve.Trim(cuts[0], cuts[1])
+        if first is not None:
+            turn = rg.Vector3d.VectorAngle(previous.TangentAtEnd, first.TangentAtStart)
+            if turn > KINK:
+                forced.append(0)
+    return vertices, closed, forced
 
 
 def _nurbs(degree: int, ctrl: list, knots: list) -> rg.NurbsCurve:
@@ -168,8 +188,8 @@ def rebuild_curve(curve: rg.Curve, tol: float, corner_angle_deg: float):
     ok, arc = curve.TryGetArc(tol)
     if ok and not curve.IsClosed:
         return rg.ArcCurve(arc), ["arc"]
-    vertices, closed = curve_vertices(curve, tol)
-    pieces = rebuild(vertices, closed, tol, math.radians(corner_angle_deg))
+    vertices, closed, forced = curve_vertices(curve, tol)
+    pieces = rebuild(vertices, closed, tol, math.radians(corner_angle_deg), forced)
     if not pieces:
         return None, []
     return pieces_to_curve(pieces), [kind for kind, _ in pieces]

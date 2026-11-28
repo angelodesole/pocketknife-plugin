@@ -149,7 +149,8 @@ def find_corners(
 
 
 PRIMITIVE_FIT = 0.1
-LINE_TURN = math.radians(0.01)
+LINE_TURN = 1e-6  # radians: exported collinear vertices are exact
+ARC_END_BREAK = 0.25
 LINE_MIN_EDGES = 3
 ARC_MIN_VERTICES = 4
 ARC_MIN_SWEEP = math.radians(20.0)
@@ -363,21 +364,35 @@ def partition(
     if closed and not corners:
         fit = _arc_fit(points, turns, tol, True)
         if fit is not None and _sweep(list(points) + [points[0]], fit[0]) > math.pi:
-            return [Run("circle", 0, 0, *fit)]
+            center, normal, radius = fit
+            # Orient the normal by the traversal, so the circle runs the same way.
+            winding = sum(
+                _dot(_cross(_sub(a, center), _sub(b, center)), normal)
+                for a, b in zip(points, list(points[1:]) + [points[0]])
+            )
+            if winding < 0:
+                normal = _scale(normal, -1.0)
+            return [Run("circle", 0, 0, center, normal, radius)]
         start = max(
             range(n), key=lambda i: (round(abs(turns[i] - turns[i - 1]), 9), -i)
         )
-        runs = _partition_stretch(
-            points, turns, [(start + k) % n for k in range(n + 1)], tol
-        )
-        if len(runs) > 2 and runs[0].kind == runs[-1].kind != "free":
-            # The seam fell inside a primitive: restart where the last run
-            # begins, so the two halves become one run.
-            start = runs[-1].start
-            runs = _partition_stretch(
-                points, turns, [(start + k) % n for k in range(n + 1)], tol
-            )
-        return runs
+
+        def from_start(s0: int) -> list[Run]:
+            ring = [(s0 + k) % n for k in range(n + 1)]
+            return _partition_stretch(points, turns, ring, tol, cyclic=True)
+
+        def score(runs: list[Run]) -> tuple[int, int]:
+            free = sum((r.end - r.start) % n or n for r in runs if r.kind == "free")
+            return (free, len(runs))
+
+        # The seam may fall inside a primitive: retry from each run boundary
+        # and keep the partition with the fewest free edges, then runs.
+        best = from_start(start)
+        for candidate in [r.start for r in best][:12]:
+            runs = from_start(candidate)
+            if score(runs) < score(best):
+                best = runs
+        return best
     elif closed:
         cs = sorted(corners)
         stretches = []
@@ -392,8 +407,46 @@ def partition(
     return runs
 
 
+def _arc_ends_clean(
+    points: Sequence[Vec3],
+    turns: Sequence[float],
+    idx: list[int],
+    p: int,
+    q: int,
+    cyclic: bool,
+) -> bool:
+    """True if an arc run ends where the facet rhythm really changes.
+
+    A faceted arc from an exporter stops where a line, a corner or another
+    arc begins: the turn or the edge length beyond its ends changes sharply.
+    A run that only stops because a smooth curve drifted out of regularity
+    is part of a free curve, not an arc.
+    """
+    last = len(idx) - 1
+    inner = [turns[i] for i in idx[p + 1 : q]]
+    facet_turn = sum(inner) / len(inner)
+    edges = [_dist(points[a], points[b]) for a, b in zip(idx[p:q], idx[p + 1 : q + 1])]
+    facet_edge = sum(edges) / len(edges)
+
+    def broken(at: int, beyond: int | None) -> bool:
+        if beyond is None:
+            return True
+        turn_change = abs(turns[idx[at]] - facet_turn) >= ARC_END_BREAK * facet_turn
+        edge = _dist(points[idx[at]], points[beyond])
+        edge_change = abs(edge - facet_edge) >= ARC_END_BREAK * facet_edge
+        return turn_change or edge_change
+
+    before = idx[p - 1] if p > 0 else (idx[last - 1] if cyclic else None)
+    after = idx[q + 1] if q < last else (idx[1] if cyclic else None)
+    return broken(p, before) and broken(q, after)
+
+
 def _partition_stretch(
-    points: Sequence[Vec3], turns: Sequence[float], idx: list[int], tol: float
+    points: Sequence[Vec3],
+    turns: Sequence[float],
+    idx: list[int],
+    tol: float,
+    cyclic: bool = False,
 ) -> list[Run]:
     out: list[Run] = []
     free_start = None
@@ -431,6 +484,10 @@ def _partition_stretch(
             if _sweep(sub, fit[0]) >= ARC_MIN_SWEEP:
                 best_arc, arc_fit = q, fit
             q += 1
+        if best_arc is not None and not _arc_ends_clean(
+            points, turns, idx, p, best_arc, cyclic
+        ):
+            best_arc, arc_fit = None, None
         if best_line is None and best_arc is None:
             if free_start is None:
                 free_start = p
@@ -657,14 +714,14 @@ def _fit_core(points, count, t_start, t_end, tol):
     degree = min(3, count - 1)
     params = centripetal_params(points)
     knots = averaged_knots(params, count, degree)
-    best, best_dev, previous = None, math.inf, math.inf
+    best, best_dev, previous, best_params = None, math.inf, math.inf, params
     for it in range(MAX_CORRECTIONS + 1):
         fit = _solve_fit(points, params, knots, count, degree, t_start, t_end)
         if fit is None:
             return best, best_dev
         params, dev = _project(points, fit, params, steps=1)
         if dev < best_dev:
-            best, best_dev = fit, dev
+            best, best_dev, best_params = fit, dev, params
         if tol is not None and dev <= 0.5 * tol:
             break
         rate = dev / previous if previous > 0.0 else 0.0
@@ -676,7 +733,33 @@ def _fit_core(points, count, t_start, t_end, tol):
             if dev * rate ** (MAX_CORRECTIONS - it) > tol:
                 break
         previous = dev
+    if best is not None and not _well_behaved(
+        points, best_params, best, t_start, t_end, tol or 0.0
+    ):
+        best_dev = math.inf
     return best, best_dev
+
+
+def _well_behaved(points, params, fit, t_start, t_end, tol) -> bool:
+    """Rejects fits that loop or cusp between the vertices.
+
+    End tangents must point forward (no negative ray coefficient), and the
+    curve between consecutive vertices must stay close to their edge: within
+    a quarter of the edge length, or the tolerance if larger.
+    """
+    degree, ctrl, knots = fit
+    if len(ctrl) >= 4:
+        if t_start is not None and _dot(_sub(ctrl[1], ctrl[0]), t_start) < 0:
+            return False
+        if t_end is not None and _dot(_sub(ctrl[-1], ctrl[-2]), t_end) < 0:
+            return False
+    for (a, ua), (b, ub) in zip(zip(points, params), zip(points[1:], params[1:])):
+        limit = max(tol, 0.25 * _dist(a, b))
+        for f in (0.25, 0.5, 0.75):
+            c = bspline_point(degree, ctrl, knots, ua + f * (ub - ua))
+            if _point_segment_distance(c, a, b) > limit:
+                return False
+    return True
 
 
 def _solve_fit(points, params, knots, count, degree, t_start, t_end):
@@ -728,6 +811,14 @@ def _solve_fit(points, params, knots, count, degree, t_start, t_end):
                 row = ata[i]
                 for j, cj in items:
                     row[j] += ci * cj
+    # Tiny pull of each tangent length toward a third of the chord: it only
+    # decides when the points leave the length undetermined (few vertices).
+    guess = _dist(p0, pn) / 3.0
+    weight = 1e-6 * max(1.0, float(len(points)))
+    for entry in layout:
+        if entry[0] == "ray":
+            ata[entry[3]][entry[3]] += weight
+            atb[entry[3]] += weight * guess
     sol = solve(ata, atb)
     if sol is None:
         return None
@@ -799,6 +890,10 @@ def fit_free(
     if m == 2:
         return "nurbs", (1, pts, [0.0, 0.0, 1.0, 1.0])
     if m == 3:
+        if t_start is not None or t_end is not None:
+            fit, dev = _fit_core(pts, 4, t_start, t_end, tol)
+            if fit is not None and dev <= tol:
+                return "nurbs", fit
         fit = fit_with(pts, 3, None, None)
         if fit is not None and max_deviation(pts, *fit) <= tol:
             return "nurbs", fit
@@ -912,7 +1007,11 @@ def _arc_piece(
 
 
 def rebuild(
-    points: Sequence[Vec3], closed: bool, tol: float, corner_angle: float
+    points: Sequence[Vec3],
+    closed: bool,
+    tol: float,
+    corner_angle: float,
+    forced_corners: Sequence[int] = (),
 ) -> list[tuple[str, tuple]]:
     """Rebuilds a faceted polyline into lines, arcs, circles and NURBS.
 
@@ -921,6 +1020,8 @@ def rebuild(
         closed: True for a closed ring.
         tol: Tolerance at the input vertices.
         corner_angle: Corner angle in radians.
+        forced_corners: Indices of input vertices that are corners whatever
+            their angle (e.g. kinks of the input curve).
 
     Returns:
         Pieces in order: ``("line", (p0, p1))``, ``("arc", (p0, pmid, p1))``,
@@ -928,15 +1029,36 @@ def rebuild(
         ``("nurbs", (degree, ctrl, knots))`` or ``("polyline", (points,))``.
         Consecutive pieces share their end vertices exactly.
     """
-    pts = dedupe(points, closed, tol / 100.0)
+    eps = tol / 100.0
+    pts, kept = [], []
+    for i, p in enumerate(points):
+        p = (float(p[0]), float(p[1]), float(p[2]))
+        if not pts or _dist(p, pts[-1]) > eps:
+            pts.append(p)
+            kept.append(i)
+    if closed:
+        while len(pts) > 1 and _dist(pts[0], pts[-1]) <= eps:
+            pts.pop()
+            kept.pop()
     if len(pts) < 2 or (closed and len(pts) < 3):
         return []
-    corners = find_corners(pts, closed, corner_angle)
+    position = {}
+    for new, old in enumerate(kept):
+        position[old] = new
+    forced = set()
+    for i in forced_corners:
+        # A removed duplicate maps to the vertex it duplicated.
+        j = i
+        while j >= 0 and j not in position:
+            j -= 1
+        if j >= 0:
+            forced.add(position[j])
+    corners = sorted(set(find_corners(pts, closed, corner_angle)) | forced)
     runs = partition(pts, closed, tol, corners)
     corner_set = set(corners)
     n = len(pts)
 
-    if closed and len(runs) == 1 and runs[0].kind == "free":
+    if closed and not corners and len(runs) == 1 and runs[0].kind == "free":
         turns = turning_angles(pts, True)
         s = max(range(n), key=lambda i: turns[i])
         ring = [pts[(s + k) % n] for k in range(n + 1)]
@@ -949,8 +1071,32 @@ def rebuild(
             return runs[j % len(runs)] if len(runs) > 1 else None
         return runs[j] if 0 <= j < len(runs) else None
 
+    # Arcs first: their final centres (made tangent to neighbouring lines)
+    # give the tangents imposed on neighbouring free runs.
+    arc_pieces = {}
+    for k, run in enumerate(runs):
+        if run.kind != "arc":
+            continue
+        prev, nxt = neighbour(k, -1), neighbour(k, 1)
+        start_dir = (
+            _line_dir(pts, prev)
+            if prev is not None and prev.kind == "line" and run.start not in corner_set
+            else None
+        )
+        end_dir = (
+            _line_dir(pts, nxt)
+            if nxt is not None and nxt.kind == "line" and run.end not in corner_set
+            else None
+        )
+        piece, center = _arc_piece(pts, run, tol, start_dir, end_dir)
+        arc_pieces[k] = piece
+        runs[k] = run._replace(center=center)
+
     pieces = []
     for k, run in enumerate(runs):
+        if run.kind == "arc":
+            pieces.append(arc_pieces[k])
+            continue
         if run.kind == "circle":
             center, normal, radius = run.center, run.normal, run.radius
             radial = _sub(pts[0], center)
@@ -965,20 +1111,6 @@ def rebuild(
         prev, nxt = neighbour(k, -1), neighbour(k, 1)
         smooth_start = run.start not in corner_set
         smooth_end = run.end not in corner_set
-        if run.kind == "arc":
-            start_dir = (
-                _line_dir(pts, prev)
-                if prev is not None and prev.kind == "line" and smooth_start
-                else None
-            )
-            end_dir = (
-                _line_dir(pts, nxt)
-                if nxt is not None and nxt.kind == "line" and smooth_end
-                else None
-            )
-            piece, _ = _arc_piece(pts, run, tol, start_dir, end_dir)
-            pieces.append(piece)
-            continue
         t_start = (
             _end_tangent(pts, prev, at_start=False)
             if prev is not None and prev.kind in ("line", "arc") and smooth_start

@@ -151,7 +151,13 @@ def _silhouettes(items: list, plane: rg.Plane, tol: float):
 
 
 def _true_arc(curve, plane: rg.Plane, tol: float):
-    """Returns an ``ArcCurve`` for a circular curve, else the curve itself."""
+    """Returns an ``ArcCurve`` for a circular curve, else the curve itself.
+
+    Faceted curves (mesh outlines) are kept as they are, however close to a
+    circle their vertices lie.
+    """
+    if curve.Degree == 1 or curve.TryGetPolyline()[0]:
+        return curve
     if curve.IsClosed:
         ok, circle = curve.TryGetCircle(tol)
         if ok:

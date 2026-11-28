@@ -29,8 +29,8 @@ tags the commit, creates the GitHub release and pushes the package to
    ```
 
    It lists every problem at once: versions that differ, a missing or empty
-   changelog section, a missing or wrong `.yak` in `dist/`, missing files in
-   `project/build/rh8/`, not on a clean `main` equal to `origin/main`. It warns
+   changelog section, a missing or wrong `.yak` in `dist/`, `Yak.exe` not found,
+   `gh` not logged in, not on a clean `main` equal to `origin/main`. It warns
    when the `.yak` is older than the last commit to the sources. When all is
    well it prints the notes and the plan.
 6. Optional: try the package on the test server (wiped every night):
@@ -50,8 +50,8 @@ tags the commit, creates the GitHub release and pushes the package to
 
    Type the version to confirm. In order, it:
    1. creates the annotated tag `vX.Y.Z` on `HEAD` and pushes it;
-   2. zips `PocketKnife.rhp`, `.rui` and `.gha` into
-      `dist/pocketknife-X.Y.Z-rh8.zip`;
+   2. zips `PocketKnife.rhp`, `.rui` and `.gha` from the `.yak` into
+      `dist/pocketknife-X.Y.Z-rh8.zip`, so GitHub and Yak get the same build;
    3. creates the GitHub release with the notes, the `.yak` and the zip;
    4. pushes the `.yak` to Yak.
 

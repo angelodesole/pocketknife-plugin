@@ -210,3 +210,37 @@ def missing_assets(existing: list[str] | None, wanted: list[str]) -> list[str]:
     if existing is None:
         return list(wanted)
     return [name for name in wanted if name not in existing]
+
+
+def release_action(
+    existing: list[str] | None, wanted: list[str]
+) -> tuple[str, list[str]]:
+    """Decides what to do with the GitHub release.
+
+    Args:
+        existing: Asset names of the release, or None if there is no release.
+        wanted: Asset names the release must have.
+
+    Returns:
+        ``("create", wanted)`` without a release, ``("upload", missing)`` when
+        assets are missing, ``("none", [])`` when the release is complete.
+    """
+    missing = missing_assets(existing, wanted)
+    if existing is None:
+        return "create", missing
+    return ("upload" if missing else "none"), missing
+
+
+def check_tools(yak_found: bool, gh_logged_in: bool) -> None:
+    """Checks that ``Yak.exe`` exists and ``gh`` is logged in.
+
+    Raises:
+        ReleaseError: Naming every missing tool.
+    """
+    problems = []
+    if not yak_found:
+        problems.append("Yak.exe not found (use --rhino <Rhino 8 System folder>)")
+    if not gh_logged_in:
+        problems.append("gh is not installed or not logged in (run gh auth login)")
+    if problems:
+        raise ReleaseError("Tools: " + "; ".join(problems) + ".")

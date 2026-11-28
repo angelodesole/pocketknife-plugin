@@ -7,11 +7,13 @@ from releasing import (
     ReleaseError,
     changelog_notes,
     check_git,
+    check_tools,
     check_versions,
     check_yak,
     is_stale,
     missing_assets,
     parse_version,
+    release_action,
     tag_action,
     yak_name,
     zip_name,
@@ -174,3 +176,26 @@ def test_missing_assets():
     assert missing_assets(None, ["a", "b"]) == ["a", "b"]
     assert missing_assets(["a"], ["a", "b"]) == ["b"]
     assert missing_assets(["a", "b"], ["a", "b"]) == []
+
+
+def test_release_action_creates_when_no_release():
+    assert release_action(None, ["a", "b"]) == ("create", ["a", "b"])
+
+
+def test_release_action_uploads_to_empty_release():
+    assert release_action([], ["a", "b"]) == ("upload", ["a", "b"])
+
+
+def test_release_action_none_when_complete():
+    assert release_action(["a", "b"], ["a", "b"]) == ("none", [])
+
+
+def test_check_tools_ok():
+    check_tools(yak_found=True, gh_logged_in=True)
+
+
+def test_check_tools_reports_both():
+    with pytest.raises(ReleaseError) as error:
+        check_tools(yak_found=False, gh_logged_in=False)
+    assert "Yak.exe" in str(error.value)
+    assert "gh auth login" in str(error.value)

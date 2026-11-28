@@ -75,7 +75,9 @@ python tools/release.py publish          # checks, tag, GitHub release, Yak
 3. `dist/pocketknife-X.Y.Z-rh8_0-any.yak` exists; its `manifest.yml` has
    `name: pocketknife` and `version: X.Y.Z`, and the zip holds the `.rhp`,
    `.rui` and `.gha`.
-4. `project/build/rh8/` holds the three files.
+4. `Yak.exe` exists and `gh` is logged in (`gh` skipped by `test`). (The
+   first draft also checked `project/build/rh8/`; dropped after review because
+   the zip now comes from the `.yak`.)
 5. Git (skipped by `test`): on `main`, clean working tree, `HEAD` equal to
    `origin/main` after a fetch.
 6. Staleness (warning, not an error): the `.yak` is older than the last commit
@@ -87,8 +89,8 @@ Each step checks the current state first, so a rerun resumes:
 
 1. Tag `vX.Y.Z` (annotated) on `HEAD` and push it. Exists on `HEAD`: skip.
    Exists elsewhere: stop with an error.
-2. Zip `PocketKnife.rhp`, `.rui`, `.gha` into
-   `dist/pocketknife-X.Y.Z-rh8.zip`.
+2. Zip `PocketKnife.rhp`, `.rui`, `.gha`, taken from the `.yak` (so GitHub
+   and Yak get the same build), into `dist/pocketknife-X.Y.Z-rh8.zip`.
 3. `gh release create vX.Y.Z --verify-tag --title "Pocket Knife X.Y.Z"
    --notes-file <notes>` with the `.yak` and the zip. Exists: upload only
    missing assets.

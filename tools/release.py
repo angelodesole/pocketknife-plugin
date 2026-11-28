@@ -27,17 +27,17 @@ from releasing import (
     ReleaseError,
     changelog_notes,
     check_git,
+    check_tools,
     check_versions,
     check_yak,
     is_stale,
-    missing_assets,
+    release_action,
     tag_action,
     yak_name,
     zip_name,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-BUILD = ROOT / "project" / "build" / "rh8"
 DIST = ROOT / "dist"
 RHINO_SYSTEM = Path(r"C:\Program Files\Rhino 8\System")
 SOURCE_DIRS = ("commands", "grasshopper", "src", "icons", "project")
@@ -50,7 +50,6 @@ class Release:
     version: str
     notes: str
     yak: Path
-    build: Path
 
     @property
     def tag(self) -> str:
@@ -65,21 +64,27 @@ class Release:
 
 def output(command: list[str]) -> tuple[int, str]:
     """Runs a command quietly and returns its exit code and stripped stdout."""
-    result = subprocess.run(
-        command,
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        result = subprocess.run(
+            command,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError as error:
+        raise ReleaseError(f"Cannot run {command[0]}: {error}") from error
     return result.returncode, result.stdout.strip()
 
 
 def run(command: list[str]) -> None:
     """Runs a command, echoing it, and stops on failure."""
     print(">", " ".join(f'"{c}"' if " " in c else c for c in command))
-    result = subprocess.run(command, cwd=ROOT)
+    try:
+        result = subprocess.run(command, cwd=ROOT)
+    except OSError as error:
+        raise ReleaseError(f"Cannot run {command[0]}: {error}") from error
     if result.returncode != 0:
         raise ReleaseError(f"Failed with exit code {result.returncode}.")
 
@@ -113,11 +118,20 @@ def _git_state() -> None:
     check_git(branch, dirty, head, upstream)
 
 
-def gather(git: bool) -> Release:
+def _gh_logged_in() -> bool:
+    try:
+        return output(["gh", "auth", "status"])[0] == 0
+    except ReleaseError:
+        return False
+
+
+def gather(git: bool, yak_exe: Path) -> Release:
     """Runs every check and returns the release.
 
     Args:
-        git: Whether to check the git state (on ``main``, clean, pushed).
+        git: Whether to check the git state (on ``main``, clean, pushed) and
+            the ``gh`` login; False for ``test``.
+        yak_exe: Path of ``Yak.exe``.
 
     Returns:
         The checked release.
@@ -145,12 +159,11 @@ def gather(git: bool) -> Release:
     if version:
         notes = attempt(lambda: changelog_notes(_read(ROOT / "CHANGELOG.md"), version))
         attempt(lambda: _check_package(yak, version))
-    missing = [name for name in PACKAGE_FILES if not (BUILD / name).exists()]
-    if missing:
-        problems.append(
-            f"Missing in project/build/rh8: {', '.join(missing)}. "
-            "Run tools/build_plugin.py first."
+    attempt(
+        lambda: check_tools(
+            yak_found=yak_exe.is_file(), gh_logged_in=not git or _gh_logged_in()
         )
+    )
     if git:
         attempt(_git_state)
     if problems:
@@ -162,11 +175,11 @@ def gather(git: bool) -> Release:
             "Warning: the .yak is older than the last commit to the sources. "
             "Rebuild with tools/build_plugin.py if they changed."
         )
-    return Release(version=version, notes=notes, yak=yak, build=BUILD)
+    return Release(version=version, notes=notes, yak=yak)
 
 
-def plan(rel: Release) -> tuple[str, list[str]]:
-    """Returns the tag action and the release assets still to upload."""
+def plan(rel: Release) -> tuple[str, str, list[str]]:
+    """Returns the tag action, the release action and the assets to upload."""
     code, commit = output(["git", "rev-list", "-n", "1", rel.tag])
     head = output(["git", "rev-parse", "HEAD"])[1]
     action = tag_action(commit if code == 0 and commit else None, head)
@@ -174,27 +187,36 @@ def plan(rel: Release) -> tuple[str, list[str]]:
         ["gh", "release", "view", rel.tag, "--json", "assets", "-q", ".assets[].name"]
     )
     existing = names.splitlines() if code == 0 else None
-    return action, missing_assets(existing, [rel.yak.name, rel.zip.name])
+    return (action, *release_action(existing, [rel.yak.name, rel.zip.name]))
 
 
-def write_zip(rel: Release) -> None:
-    """Writes the zip with the ``.rhp``, ``.rui`` and ``.gha`` (flat)."""
-    with zipfile.ZipFile(rel.zip, "w", zipfile.ZIP_DEFLATED) as archive:
-        for name in PACKAGE_FILES:
-            archive.write(rel.build / name, name)
-    print(f"Wrote {rel.zip.relative_to(ROOT)}")
+def write_zip(yak: Path, target: Path) -> None:
+    """Writes the zip with the ``.rhp``, ``.rui`` and ``.gha`` (flat).
+
+    The files come from the ``.yak`` package, so the GitHub zip and the Yak
+    package hold the same build.
+
+    Args:
+        yak: The checked ``.yak`` package.
+        target: Path of the zip to write.
+    """
+    with zipfile.ZipFile(yak) as package:
+        with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
+            for name in PACKAGE_FILES:
+                archive.writestr(name, package.read(name))
+    print(f"Wrote {target.name}")
 
 
 def publish(rel: Release, yak_exe: Path) -> None:
     """Tags, creates or completes the GitHub release, then pushes to Yak."""
-    action, missing = plan(rel)
-    if action == "create":
+    tag, release, missing = plan(rel)
+    if tag == "create":
         run(["git", "tag", "-a", rel.tag, "-m", f"Pocket Knife {rel.version}"])
     run(["git", "push", "origin", rel.tag])
-    if rel.zip.name in missing or not rel.zip.exists():
-        write_zip(rel)
+    if rel.zip.name in missing:
+        write_zip(rel.yak, rel.zip)
     files = [str(DIST / name) for name in missing]
-    if len(missing) == 2:
+    if release == "create":
         with tempfile.TemporaryDirectory() as folder:
             notes = Path(folder) / "notes.md"
             notes.write_text(rel.notes + "\n", encoding="utf-8")
@@ -212,7 +234,7 @@ def publish(rel: Release, yak_exe: Path) -> None:
                     *files,
                 ]
             )
-    elif missing:
+    elif release == "upload":
         run(["gh", "release", "upload", rel.tag, *files])
     else:
         print(f"GitHub release {rel.tag} already complete.")
@@ -234,11 +256,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     yak_exe = args.rhino / "Yak.exe"
     try:
-        rel = gather(git=args.action != "test")
+        rel = gather(git=args.action != "test", yak_exe=yak_exe)
         if args.action == "test":
             run([str(yak_exe), "push", "--source", TEST_SOURCE, str(rel.yak)])
             return 0
-        action, missing = plan(rel)
+        action, _, missing = plan(rel)
         print(f"Version {rel.version}, tag {rel.tag}")
         print(f"Package {rel.yak.relative_to(ROOT)}")
         print(f"Release notes:\n\n{rel.notes}\n")

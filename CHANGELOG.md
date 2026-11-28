@@ -26,6 +26,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning: [S
   `polyfit` and `footprint`, Rhino side in `rhinocurves`, `rhinoclip`,
   `rhinorebuild` and `rhinofootprint`.
 
+- Release script `tools/release.py` (`check`, `test`, `publish`): checks the
+  version, `CHANGELOG.md` and the local build, then tags, creates the GitHub
+  release and pushes to Yak. Documented in `docs/releasing.md`.
+
 ### Fixed
 - `pkCopyToLayerCopy`: selected layers below another selected layer no longer split the copied tree.
 

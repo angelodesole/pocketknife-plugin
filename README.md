@@ -31,7 +31,8 @@ Once published: Rhino 8 → `_PackageManager` → search **pocketknife** → Ins
 
 See [project/README.md](project/README.md): `tools/build_project.py` (in
 Rhino) generates the `.rhproj`, `tools/build_plugin.py` builds the `.rhp`,
-`.gha` and `.yak`.
+`.gha` and `.yak`, `tools/release.py` publishes them
+([docs/releasing.md](docs/releasing.md)).
 
 ## Platforms
 

@@ -128,6 +128,8 @@ Do this only after the user approves the prototype in Rhino:
   6. An open curve (low `GapTolerance`): selected and reported.
   7. Undo; the GH component on the same objects.
   8. Timing on the biggest masterplan available.
+  9. Run with a current layer that is not the first in the layer table: the
+     curves go to the current layer.
 
 ### Known minor issues (deferred)
 
@@ -138,6 +140,13 @@ Do this only after the user approves the prototype in Rhino:
 - pkRebuildCurves:
   - a 500-vertex free run at tolerance 0.001 takes about 7 s;
   - when the tangent-constrained arc fails, the arc/line join keeps a small kink.
+- pkFootprint:
+  - failed chains made only of segments <= GapTolerance vanish unreported, and
+    a source shared by a good loop and a failed chain is output whole as open;
+  - items rejected by `AddGeometry` are not counted as skipped;
+  - "No supported objects." is also printed when no silhouettes come out;
+  - mesh outlines come out as degree-1 NurbsCurve rather than PolylineCurve;
+  - GH InstanceReferenceGeometry inputs are skipped.
 
 ### Ideas not started
 

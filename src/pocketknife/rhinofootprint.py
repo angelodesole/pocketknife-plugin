@@ -132,6 +132,8 @@ def _silhouettes(items: list, plane: rg.Plane, tol: float):
         return None
     try:
         ok, to_world = hld.WorldToHiddenLine.TryGetInverse()
+        if not ok:
+            return None
         flatten = rg.Transform.PlanarProjection(plane)
         visible = rg.HiddenLineDrawingSegment.Visibility.Visible
         segments = []
@@ -141,8 +143,7 @@ def _silhouettes(items: list, plane: rg.Plane, tol: float):
             if not segment.IsSceneSilhouette:
                 continue
             curve = segment.CurveGeometry.DuplicateCurve()
-            if ok:
-                curve.Transform(to_world)
+            curve.Transform(to_world)
             curve.Transform(flatten)
             segments.append(curve)
     finally:

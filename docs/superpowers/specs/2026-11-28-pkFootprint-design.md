@@ -78,9 +78,10 @@ loses regions on coincident edges and shared walls.
   so pkCleanCurves is unchanged) used **only** to fuse endpoints into nodes;
   everything that shapes geometry keeps the model tolerance. pkFootprint
   calls it with `tol` = model tolerance and `join_tol` = `GapTolerance`.
-  Short mesh facets are therefore not dropped, and no vertex moves by more
-  than the model tolerance except the snap of an endpoint onto its node
-  (at most `GapTolerance`, which is the point of the option). This touches
+  Mesh facets longer than `GapTolerance` are therefore kept; a piece shorter
+  than `GapTolerance` collapses into its node. No vertex moves by more than
+  the model tolerance except the snap of an endpoint onto its node (at most
+  `GapTolerance`, which is the point of the option). This touches
   `curvegraph.py` / `rhinocurves.py`, shared with pkCleanCurves: the change is
   additive and covered by new pytest cases; the existing tests must pass
   unchanged.
@@ -225,7 +226,8 @@ components do. Tolerance from `rhinoutil.document_tolerance()`.
 Pure Python (pytest):
 
 - `join_tol`: ends 2x tol apart join with `join_tol` = 3x tol and stay apart
-  without it; segments shorter than `join_tol` but longer than tol are kept;
+  without it; a segment longer than `join_tol` is kept, one shorter than
+  `join_tol` collapses into its node;
   all existing curvegraph tests unchanged.
 - `split_touches`: two squares touching corner to corner give two loops;
   two holes touching at a corner inside an island give three loops; two

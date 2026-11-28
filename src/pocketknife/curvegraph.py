@@ -628,18 +628,22 @@ def build_chains(
     def split(chain: Chain) -> tuple[list[Chain], list[Chain]]:
         first_seg, first_rev = chain.items[0]
         stack_nodes = [node_ids[2 * first_seg + (1 if first_rev else 0)]]
+        position = {stack_nodes[0]: 0}
         stack_items: list[tuple[int, bool]] = []
         loops: list[Chain] = []
         for item in chain.items:
             seg, rev = item
             stack_items.append(item)
             node = node_ids[2 * seg + (0 if rev else 1)]
-            if node in stack_nodes:
-                at = stack_nodes.index(node)
+            at = position.get(node)
+            if at is not None:
                 loops.append(Chain(stack_items[at:], True))
                 del stack_items[at:]
+                for popped in stack_nodes[at + 1 :]:
+                    del position[popped]
                 del stack_nodes[at + 1 :]
             else:
+                position[node] = len(stack_nodes)
                 stack_nodes.append(node)
         rest = [Chain(stack_items, False)] if stack_items else []
         return rest, loops

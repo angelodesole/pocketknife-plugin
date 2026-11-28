@@ -520,3 +520,26 @@ def test_split_open_chain_with_self_loop_segment():
     chains = build_chains(segments, TOL, math.pi, split_touches=True)
     assert sorted(c.closed for c in chains) == [False, True]
     assert_valid_chains(segments, chains)
+
+
+def test_split_touches_scales_linearly_on_a_long_loop():
+    n = 40000
+    pts = [
+        (100 * math.cos(2 * math.pi * i / n), 100 * math.sin(2 * math.pi * i / n))
+        for i in range(n)
+    ]
+    segments = [line_segment(pts[i], pts[(i + 1) % n]) for i in range(n)]
+    start = time.perf_counter()
+    chains = build_chains(segments, TOL, math.pi, split_touches=True)
+    elapsed = time.perf_counter() - start
+    assert len(chains) == 1
+    assert chains[0].closed
+    assert elapsed < 1.0
+
+
+def test_build_chains_tol_decides_a_small_break():
+    segments = square(0, 0, 1)
+    end = segments[-1]
+    broken = segments[:-1] + [line_segment(end.start, (0.0, 0.002))]
+    assert [c.closed for c in build_chains(broken, TOL, math.pi)].count(True) == 0
+    assert [c.closed for c in build_chains(broken, 0.003, math.pi)] == [True]

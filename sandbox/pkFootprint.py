@@ -71,7 +71,7 @@ def main():
     undo = doc.BeginUndoRecord("pkFootprint")
     added_closed = []
     added_open = []
-    attributes = Rhino.DocObjects.ObjectAttributes()
+    attributes = doc.CreateDefaultAttributes()
     for curves, added in ((result.closed, added_closed), (result.open, added_open)):
         for curve in curves:
             curve_id = doc.Objects.AddCurve(curve, attributes)

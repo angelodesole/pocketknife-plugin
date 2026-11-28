@@ -810,3 +810,184 @@ def fit_free(
         if ts is None and te is None:
             break
     return "polyline", (pts,)
+
+
+# Assembly ------------------------------------------------------------------
+
+
+def _run_points(points: Sequence[Vec3], run: Run) -> list[Vec3]:
+    n = len(points)
+    if run.kind == "circle":
+        return list(points) + [points[0]]
+    count = (run.end - run.start) % n or n
+    return [points[(run.start + k) % n] for k in range(count + 1)]
+
+
+def _circumcenter(a: Vec3, b: Vec3, c: Vec3) -> Vec3 | None:
+    ab, ac = _sub(b, a), _sub(c, a)
+    n = _cross(ab, ac)
+    nn = _dot(n, n)
+    if nn < 1e-30:
+        return None
+    term = _add(
+        _scale(_cross(n, ab), _dot(ac, ac)), _scale(_cross(ac, n), _dot(ab, ab))
+    )
+    return _add(a, _scale(term, 1.0 / (2.0 * nn)))
+
+
+def _arc_tangent(center: Vec3, normal: Vec3, at: Vec3, toward: Vec3) -> Vec3:
+    """Unit tangent of a circle at ``at``, oriented toward ``toward``."""
+    t = _unit(_cross(normal, _sub(at, center)))
+    return t if _dot(t, _sub(toward, at)) >= 0 else _scale(t, -1.0)
+
+
+def _constrained_center(
+    pts: Sequence[Vec3], normal: Vec3, start_dir: Vec3 | None, end_dir: Vec3 | None
+) -> Vec3 | None:
+    """Centre of an arc tangent to the given line directions at its ends."""
+    a, b = pts[0], pts[-1]
+    lines = []
+    if start_dir is not None:
+        lines.append((a, _unit(_cross(normal, start_dir))))
+    if end_dir is not None:
+        lines.append((b, _unit(_cross(normal, end_dir))))
+    if not lines:
+        return None
+    if len(lines) == 2:
+        (p, u), (q, v) = lines
+        # p + s u = q + t v, least squares in the plane.
+        uv = _dot(u, v)
+        denom = 1.0 - uv * uv
+        if denom < 1e-12:
+            return None
+        w = _sub(q, p)
+        s = (_dot(w, u) - uv * _dot(w, v)) / denom
+        return _add(p, _scale(u, s))
+    p, u = lines[0]
+    values = []
+    for q in pts:
+        d = _sub(q, p)
+        den = 2.0 * _dot(d, u)
+        if abs(den) > 1e-12:
+            values.append(_dot(d, d) / den)
+    if not values:
+        return None
+    return _add(p, _scale(u, sum(values) / len(values)))
+
+
+def _line_dir(points: Sequence[Vec3], run: Run) -> Vec3:
+    pts = _run_points(points, run)
+    return _unit(_sub(pts[-1], pts[0]))
+
+
+def _end_tangent(points: Sequence[Vec3], run: Run, at_start: bool) -> Vec3:
+    """Forward unit tangent of a primitive run at its start or end."""
+    pts = _run_points(points, run)
+    if run.kind == "line":
+        return _line_dir(points, run)
+    if at_start:
+        return _arc_tangent(run.center, run.normal, pts[0], pts[1])
+    t = _arc_tangent(run.center, run.normal, pts[-1], pts[-2])
+    return _scale(t, -1.0)
+
+
+def _arc_piece(
+    points: Sequence[Vec3],
+    run: Run,
+    tol: float,
+    start_dir: Vec3 | None,
+    end_dir: Vec3 | None,
+):
+    pts = _run_points(points, run)
+    center, radius = run.center, run.radius
+    if start_dir is not None or end_dir is not None:
+        c = _constrained_center(pts, run.normal, start_dir, end_dir)
+        if c is not None:
+            r = _dist(c, pts[0])
+            if all(abs(_dist(p, c) - r) <= tol for p in pts):
+                center, radius = c, r
+    mid_vertex = pts[len(pts) // 2]
+    pmid = _add(center, _scale(_unit(_sub(mid_vertex, center)), radius))
+    return ("arc", (pts[0], pmid, pts[-1])), center
+
+
+def rebuild(
+    points: Sequence[Vec3], closed: bool, tol: float, corner_angle: float
+) -> list[tuple[str, tuple]]:
+    """Rebuilds a faceted polyline into lines, arcs, circles and NURBS.
+
+    Args:
+        points: Input vertices.
+        closed: True for a closed ring.
+        tol: Tolerance at the input vertices.
+        corner_angle: Corner angle in radians.
+
+    Returns:
+        Pieces in order: ``("line", (p0, p1))``, ``("arc", (p0, pmid, p1))``,
+        ``("circle", (center, normal, radius, start))``,
+        ``("nurbs", (degree, ctrl, knots))`` or ``("polyline", (points,))``.
+        Consecutive pieces share their end vertices exactly.
+    """
+    pts = dedupe(points, closed, tol / 100.0)
+    if len(pts) < 2 or (closed and len(pts) < 3):
+        return []
+    corners = find_corners(pts, closed, corner_angle)
+    runs = partition(pts, closed, tol, corners)
+    corner_set = set(corners)
+    n = len(pts)
+
+    if closed and len(runs) == 1 and runs[0].kind == "free":
+        turns = turning_angles(pts, True)
+        s = max(range(n), key=lambda i: turns[i])
+        ring = [pts[(s + k) % n] for k in range(n + 1)]
+        t = _unit(_sub(pts[(s + 1) % n], pts[(s - 1) % n]))
+        return [fit_free(ring, tol, t, t)]
+
+    def neighbour(k: int, offset: int) -> Run | None:
+        j = k + offset
+        if closed:
+            return runs[j % len(runs)] if len(runs) > 1 else None
+        return runs[j] if 0 <= j < len(runs) else None
+
+    pieces = []
+    for k, run in enumerate(runs):
+        if run.kind == "circle":
+            center, normal, radius = run.center, run.normal, run.radius
+            radial = _sub(pts[0], center)
+            radial = _sub(radial, _scale(normal, _dot(radial, normal)))
+            start = _add(center, _scale(_unit(radial), radius))
+            pieces.append(("circle", (center, normal, radius, start)))
+            continue
+        rp = _run_points(pts, run)
+        if run.kind == "line":
+            pieces.append(("line", (rp[0], rp[-1])))
+            continue
+        prev, nxt = neighbour(k, -1), neighbour(k, 1)
+        smooth_start = run.start not in corner_set
+        smooth_end = run.end not in corner_set
+        if run.kind == "arc":
+            start_dir = (
+                _line_dir(pts, prev)
+                if prev is not None and prev.kind == "line" and smooth_start
+                else None
+            )
+            end_dir = (
+                _line_dir(pts, nxt)
+                if nxt is not None and nxt.kind == "line" and smooth_end
+                else None
+            )
+            piece, _ = _arc_piece(pts, run, tol, start_dir, end_dir)
+            pieces.append(piece)
+            continue
+        t_start = (
+            _end_tangent(pts, prev, at_start=False)
+            if prev is not None and prev.kind in ("line", "arc") and smooth_start
+            else None
+        )
+        t_end = (
+            _end_tangent(pts, nxt, at_start=True)
+            if nxt is not None and nxt.kind in ("line", "arc") and smooth_end
+            else None
+        )
+        pieces.append(fit_free(rp, tol, t_start, t_end))
+    return pieces

@@ -8,11 +8,12 @@ import pytest
 from pocketknife.polyfit import (
     bspline_point,
     dedupe,
+    find_corners,
     fit_free,
     fit_with,
     max_deviation,
-    find_corners,
     partition,
+    rebuild,
     turning_angles,
 )
 
@@ -215,3 +216,141 @@ def test_large_run_speed():
     assert time.perf_counter() - start < 2.0
     assert kind == "nurbs"
     assert max_deviation(pts, *data) <= TOL
+
+
+def _circumcircle(a, b, c):
+    ax, ay = a[0], a[1]
+    bx, by = b[0], b[1]
+    cx, cy = c[0], c[1]
+    d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+    ux = (
+        (ax**2 + ay**2) * (by - cy)
+        + (bx**2 + by**2) * (cy - ay)
+        + (cx**2 + cy**2) * (ay - by)
+    ) / d
+    uy = (
+        (ax**2 + ay**2) * (cx - bx)
+        + (bx**2 + by**2) * (ax - cx)
+        + (cx**2 + cy**2) * (bx - ax)
+    ) / d
+    return (ux, uy), math.hypot(ax - ux, ay - uy)
+
+
+def sample_piece(piece, count=400):
+    kind, data = piece
+    if kind == "line":
+        a, b = data
+        return [
+            tuple(a[i] + (b[i] - a[i]) * k / count for i in range(3))
+            for k in range(count + 1)
+        ]
+    if kind == "polyline":
+        return list(data[0])
+    if kind == "nurbs":
+        degree, ctrl, knots = data
+        return [bspline_point(degree, ctrl, knots, k / count) for k in range(count + 1)]
+    if kind == "circle":
+        center, normal, radius, start = data
+        a0 = math.atan2(start[1] - center[1], start[0] - center[0])
+        return [
+            (
+                center[0] + radius * math.cos(a0 + 2 * math.pi * k / count),
+                center[1] + radius * math.sin(a0 + 2 * math.pi * k / count),
+                0.0,
+            )
+            for k in range(count + 1)
+        ]
+    a, m, b = data  # planar XY arcs in these tests
+    (ux, uy), r = _circumcircle(a, m, b)
+    a0 = math.atan2(a[1] - uy, a[0] - ux)
+    am = math.atan2(m[1] - uy, m[0] - ux)
+    a1 = math.atan2(b[1] - uy, b[0] - ux)
+    sweep = (a1 - a0) % (2 * math.pi)
+    if (am - a0) % (2 * math.pi) > sweep:
+        sweep -= 2 * math.pi
+    return [
+        (
+            ux + r * math.cos(a0 + sweep * k / count),
+            uy + r * math.sin(a0 + sweep * k / count),
+            0.0,
+        )
+        for k in range(count + 1)
+    ]
+
+
+def _seg_dist(q, a, b):
+    ab = [b[i] - a[i] for i in range(3)]
+    ll = sum(c * c for c in ab)
+    t = 0.0 if ll == 0 else sum((q[i] - a[i]) * ab[i] for i in range(3)) / ll
+    t = max(0.0, min(1.0, t))
+    return math.dist(q, [a[i] + t * ab[i] for i in range(3)])
+
+
+def assert_within(points, pieces, tol=TOL):
+    polylines = [sample_piece(piece, 800) for piece in pieces]
+    for q in points:
+        d = min(
+            _seg_dist(q, a, b) for line in polylines for a, b in zip(line, line[1:])
+        )
+        assert d <= tol * 1.01, (q, d)
+
+
+def _tangent_at_start(piece):
+    s = sample_piece(piece, 2000)
+    return math.atan2(s[1][1] - s[0][1], s[1][0] - s[0][0])
+
+
+def _tangent_at_end(piece):
+    s = sample_piece(piece, 2000)
+    return math.atan2(s[-1][1] - s[-2][1], s[-1][0] - s[-2][0])
+
+
+def _angle_gap(a, b):
+    return abs((a - b + math.pi) % (2 * math.pi) - math.pi)
+
+
+def test_rebuild_24gon_from_arbitrary_seam():
+    pts = polygon(24, 3.0, 0.1)
+    pts = pts[7:] + pts[:7]
+    pieces = rebuild(pts, True, TOL, CORNER)
+    assert [p[0] for p in pieces] == ["circle"]
+    assert_within(pts, pieces)
+
+
+def test_rebuild_rounded_rectangle():
+    pts = rounded_rectangle()
+    pieces = rebuild(pts, True, TOL, CORNER)
+    assert sorted(p[0] for p in pieces) == ["arc"] * 4 + ["line"] * 4
+    assert_within(pts, pieces)
+    for a, b in zip(pieces, pieces[1:] + pieces[:1]):
+        gap = _angle_gap(_tangent_at_end(a), _tangent_at_start(b))
+        assert gap < math.radians(0.5)
+
+
+def test_rebuild_free_cubic_with_inflection():
+    pts = cubic_samples()
+    pieces = rebuild(pts, False, TOL, CORNER)
+    assert [p[0] for p in pieces] == ["nurbs"]
+    assert_within(pts, pieces)
+
+
+def test_rebuild_square_keeps_corners():
+    pts = [(0, 0, 0), (2, 0, 0), (2, 2, 0), (0, 2, 0)]
+    pieces = rebuild(pts, True, TOL, CORNER)
+    assert [p[0] for p in pieces] == ["line"] * 4
+
+
+def test_rebuild_line_then_free():
+    pts = [(-3.0 + k * 0.75, 0.0, 0.0) for k in range(4)]
+    pts += [(x, x**3, 0.0) for x in [k * 1.5 / 120 for k in range(121)]]
+    pieces = rebuild(pts, False, TOL, CORNER)
+    assert [p[0] for p in pieces] == ["line", "nurbs"]
+    assert_within(pts, pieces)
+    gap = _angle_gap(_tangent_at_end(pieces[0]), _tangent_at_start(pieces[1]))
+    assert gap < math.radians(0.5)
+
+
+def test_rebuild_pieces_share_end_vertices():
+    pieces = rebuild(rounded_rectangle(), True, TOL, CORNER)
+    for a, b in zip(pieces, pieces[1:] + pieces[:1]):
+        assert sample_piece(a)[-1] == pytest.approx(sample_piece(b)[0], abs=1e-9)

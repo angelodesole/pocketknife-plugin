@@ -136,3 +136,22 @@ without a corner are tangent.
 | Output | Meaning |
 |---|---|
 | `C` | Rebuilt curves, one per input |
+
+## pkFootprint
+
+Nickname `pkFootprint`. Outline of the union of many breps, meshes, SubDs and
+extrusions seen along a plane: one closed curve per island and per hole, no
+inner lines, exact arcs and circles where the geometry is round. Tiny gaps up
+to the gap tolerance are closed.
+
+| Input | Type hint | Access | Default | Meaning |
+|---|---|---|---|---|
+| `G` | GeometryBase | list | – | Breps, meshes, SubDs, extrusions |
+| `P` | Plane | item | World XY | Projection plane |
+| `A` | float | item | 0 | MinArea: loops with a smaller area are dropped |
+| `T` | float | item | 3x document tolerance | Gap tolerance |
+
+| Output | Meaning |
+|---|---|
+| `C` | Closed footprint curves (islands and holes) |
+| `O` | Curves that could not be closed (warning when not empty) |

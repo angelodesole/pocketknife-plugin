@@ -117,3 +117,22 @@ their projection along the mask normal.
 |---|---|
 | `I` | Kept pieces |
 | `X` | Index in `C` of the curve each piece comes from |
+
+## pkRebuildCurves
+
+Nickname `pkRebuildCrv`. Rebuilds curves exported badly by Revit, SketchUp or
+Blender (faceted polylines, over-dense curves): true corners are kept,
+uniformly faceted runs become real arcs and circles, straight runs become
+lines, the rest becomes smooth NURBS with the fewest control points. Every
+input vertex stays within the tolerance; lines, arcs and NURBS that meet
+without a corner are tangent.
+
+| Input | Type hint | Access | Default | Meaning |
+|---|---|---|---|---|
+| `C` | Curve | list | – | Curves to rebuild |
+| `T` | float | item | document tolerance | Tolerance at the input vertices |
+| `A` | float | item | 45 | Corner angle in degrees (1-179). Regular polygons with at most 360/A sides stay polygons (8 at 45°) |
+
+| Output | Meaning |
+|---|---|
+| `C` | Rebuilt curves, one per input |

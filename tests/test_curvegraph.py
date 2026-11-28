@@ -389,3 +389,51 @@ def test_backtracking_lines_not_merged():
     segs = [line_segment((0, 0), (2, 0)), line_segment((2, 0), (1, 0))]
     chain = Chain([(0, False), (1, False)], False)
     assert len(compact_chain(segs, chain, TOL)) == 2
+
+
+def square(x0, y0, size, ccw=True):
+    pts = [(x0, y0), (x0 + size, y0), (x0 + size, y0 + size), (x0, y0 + size)]
+    if not ccw:
+        pts.reverse()
+    return [line_segment(a, b) for a, b in zip(pts, pts[1:] + pts[:1])]
+
+
+def loops(chains):
+    return sorted(sorted(i for i, _ in c.items) for c in chains)
+
+
+def test_split_corner_touch_gives_two_loops():
+    segments = square(-1, -1, 1) + square(0, 0, 1)
+    chains = build_chains(segments, TOL, math.pi, split_touches=True)
+    assert all(c.closed for c in chains)
+    assert loops(chains) == [[0, 1, 2, 3], [4, 5, 6, 7]]
+
+
+def test_split_holes_touching_gives_three_loops():
+    segments = (
+        square(-5, -5, 10)
+        + square(-1, -1, 1, ccw=False)
+        + square(0, 0, 1, ccw=False)
+    )
+    chains = build_chains(segments, TOL, math.pi, split_touches=True)
+    assert all(c.closed for c in chains)
+    assert loops(chains) == [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]]
+
+
+def test_split_skew_corner_touch():
+    c, s = math.cos(0.5), math.sin(0.5)
+
+    def rot(p):
+        return (c * p[0] - s * p[1], s * p[0] + c * p[1])
+
+    b = [line_segment(rot(g.start), rot(g.end)) for g in square(0, 0, 1)]
+    chains = build_chains(square(-1, -1, 1) + b, TOL, math.pi, split_touches=True)
+    assert len(chains) == 2 and all(ch.closed for ch in chains)
+
+
+def test_split_off_keeps_todays_result():
+    segments = square(-1, -1, 1) + square(0, 0, 1)
+    assert build_chains(segments, TOL, MAX_ANGLE) == build_chains(
+        segments, TOL, MAX_ANGLE, split_touches=False
+    )
+    assert len(build_chains(segments, TOL, math.pi)) == 1

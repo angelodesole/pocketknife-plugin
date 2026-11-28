@@ -529,8 +529,12 @@ def _deviation(a: Vec2, b: Vec2) -> float:
 
 def _pair_ends(
     segments: Sequence[Segment], tol: float, max_angle: float
-) -> dict[int, int]:
-    """Pairs segment ends at each node. Ends are numbered ``2 * i + side``."""
+) -> tuple[dict[int, int], list[int]]:
+    """Pairs segment ends at each node. Ends are numbered ``2 * i + side``.
+
+    Returns:
+        The pairing, and the node id of every end.
+    """
     points = [p for s in segments for p in (s.start, s.end)]
     node_ids = fuse_endpoints(points, tol)
     nodes: dict[int, list[int]] = {}
@@ -565,11 +569,14 @@ def _pair_ends(
                 continue
             used.update((a, b))
             pairs[a], pairs[b] = b, a
-    return pairs
+    return pairs, node_ids
 
 
 def build_chains(
-    segments: Sequence[Segment], tol: float, max_angle: float
+    segments: Sequence[Segment],
+    tol: float,
+    max_angle: float,
+    split_touches: bool = False,
 ) -> list[Chain]:
     """Joins segments into chains following the straightest continuation.
 
@@ -582,12 +589,15 @@ def build_chains(
         segments: Segments, already free of overlaps.
         tol: Absolute tolerance used to fuse endpoints.
         max_angle: Maximum deviation from straight at junctions, in radians.
+        split_touches: If True, a chain that passes the same node twice is
+            split there: the part between the two visits becomes its own
+            closed chain, repeatedly, until no chain repeats a node.
 
     Returns:
         Open chains (walked from their free ends, in segment order), then
         closed chains.
     """
-    pairs = _pair_ends(segments, tol, max_angle)
+    pairs, node_ids = _pair_ends(segments, tol, max_angle)
     visited = [False] * len(segments)
     chains: list[Chain] = []
 
@@ -612,7 +622,35 @@ def build_chains(
     for seg in range(len(segments)):
         if not visited[seg]:
             chains.append(walk(seg, 0))
-    return chains
+    if not split_touches:
+        return chains
+
+    def split(chain: Chain) -> tuple[list[Chain], list[Chain]]:
+        first_seg, first_rev = chain.items[0]
+        stack_nodes = [node_ids[2 * first_seg + (1 if first_rev else 0)]]
+        stack_items: list[tuple[int, bool]] = []
+        loops: list[Chain] = []
+        for item in chain.items:
+            seg, rev = item
+            stack_items.append(item)
+            node = node_ids[2 * seg + (0 if rev else 1)]
+            if node in stack_nodes:
+                at = stack_nodes.index(node)
+                loops.append(Chain(stack_items[at:], True))
+                del stack_items[at:]
+                del stack_nodes[at + 1 :]
+            else:
+                stack_nodes.append(node)
+        rest = [Chain(stack_items, False)] if stack_items else []
+        return rest, loops
+
+    opened: list[Chain] = []
+    closed: list[Chain] = []
+    for chain in chains:
+        rest, loops = split(chain)
+        opened.extend(rest)
+        closed.extend(loops)
+    return opened + closed
 
 
 def _segment_point_distance(p: Point2, a: Point2, b: Point2) -> float:

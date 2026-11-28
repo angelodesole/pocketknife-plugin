@@ -82,22 +82,15 @@ Do this only after the user approves the prototype in Rhino:
   to 8 sides stay polygons). Every vertex stays within `Tolerance`, and
   pieces that meet without a corner are tangent. Logic in `polyfit.py`,
   Rhino side in `rhinorebuild.py`.
-- **pkFootprint** (planned): the exact outline of the union of many breps
-  and meshes on a plane (World by default, or CPlane), with real holes and
-  tiny gaps closed by an optional tolerance. Chosen approach: the Make2D
-  engine (`HiddenLineDrawing`) in a parallel view along the plane normal,
-  keeping the visible segments with `IsSceneSilhouette`, then joining them
-  with the `pkCleanCurves` pipeline. The spike prints timings, counts and
-  segment fill statistics. Write the design from its output; if the
-  approach fails, fall back to per-object `Silhouette.Compute` plus
-  `Curve.CreateBooleanRegions` on clusters of nearby objects.
-  Spike result (2026-11-28, tol 0.01): 500 breps -> 1612 silhouette
-  segments, 0.9 s in total (HLD 0.76 s); CurveBooleanUnion of the exact
-  outlines takes 0.30 s. Holes, overlaps, mesh+brep and sub-tolerance gaps
-  are right, cylinders give exact circles (as NurbsCurve). HLD leaves gaps
-  of 1.3-3x tol at some junctions: joining at 3x tol closes all of them
-  (5x reopens two, the node cluster rule rejects them), so the design needs
-  a gap tolerance separate from the model tolerance.
+- **pkFootprint**: the exact outline of the union of breps, meshes,
+  SubDs and blocks on a plane (World by default, or CPlane), with real
+  holes. `GapTolerance` (3x the model tolerance by default) joins the small
+  gaps left by the Make2D engine; `MinArea` drops small islands and holes
+  (a dropped hole takes its contents with it). Open curves are added too,
+  selected and reported. Logic in `footprint.py`, Rhino side in
+  `rhinofootprint.py`. It reuses the `pkCleanCurves` pipeline:
+  `clean_curves` gained `join_tol` and `split_touches` (and `build_chains`
+  `split_touches`), both off by default.
 
 ### Rhino test checklists
 
@@ -122,10 +115,19 @@ Do this only after the user approves the prototype in Rhino:
   4. An over-dense NURBS from FitCrv.
   5. A polycurve with a small kink: the kink stays.
   6. Undo.
-- **spike_pkFootprint**: a real scene with many objects and holes, breps
-  and meshes mixed. Check that real holes are there, that there are no
-  inner lines, that curves are exact (a cylinder gives a circle), and how
-  the timing compares with CurveBoolean.
+- **pkFootprint**:
+  1. A real masterplan: one closed curve per block, courtyards as holes,
+     no inner lines.
+  2. Buildings sharing walls and buildings 0.005 apart: one region each;
+     2x tol apart: two loops; touching at a corner: two loops sharing the
+     point.
+  3. A round tower: an exact circle (`ArcCurve`).
+  4. `MinArea` on small courtyards and kiosks: they disappear, nothing
+     else changes.
+  5. Nested block instances, and `Plane=CPlane` with a rotated CPlane.
+  6. An open curve (low `GapTolerance`): selected and reported.
+  7. Undo; the GH component on the same objects.
+  8. Timing on the biggest masterplan available.
 
 ### Known minor issues (deferred)
 

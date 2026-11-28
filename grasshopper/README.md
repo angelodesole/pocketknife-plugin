@@ -81,3 +81,77 @@ minimum XY rectangle is parallel to X or Y.
 |---|---|
 | `O` | Rotated geometry |
 | `X` | Transformations (to apply to other geometry too) |
+
+## pkCleanCurves
+
+Nickname `pkCleanCrv`. Cleans a messy network of planar curves (e.g. Make2D
+output): overlapping and duplicated stretches are drawn once, pieces are joined
+at their endpoints following the straightest continuation, collinear lines and
+co-circular arcs are merged. The geometry never moves beyond the document
+tolerance. Non-planar curves are skipped with a warning.
+
+| Input | Type hint | Access | Default | Meaning |
+|---|---|---|---|---|
+| `C` | Curve | list | – | Curves to clean |
+| `A` | float | item | 15 | Max deviation from straight at junctions, degrees (0-90) |
+
+| Output | Meaning |
+|---|---|
+| `C` | Clean curves |
+
+## pkClipCurves
+
+Nickname `pkClip`. Clips curves with mask shapes like a clipping mask: curves
+are cut where they cross the mask boundaries and only the pieces inside (or
+outside) are kept. Even-odd rule: nested shapes are holes. Stretches lying on
+a mask boundary are always dropped. Curves off the mask plane are clipped by
+their projection along the mask normal.
+
+| Input | Type hint | Access | Default | Meaning |
+|---|---|---|---|---|
+| `C` | Curve | list | – | Curves to clip |
+| `M` | GeometryBase | list | – | Mask shapes: closed planar curves or hatches, on one plane |
+| `O` | bool | item | False | True: keep outside. False: keep inside |
+
+| Output | Meaning |
+|---|---|
+| `I` | Kept pieces |
+| `X` | Index in `C` of the curve each piece comes from |
+
+## pkRebuildCurves
+
+Nickname `pkRebuildCrv`. Rebuilds curves exported badly by Revit, SketchUp or
+Blender (faceted polylines, over-dense curves): true corners are kept,
+uniformly faceted runs become real arcs and circles, straight runs become
+lines, the rest becomes smooth NURBS with the fewest control points. Every
+input vertex stays within the tolerance; lines, arcs and NURBS that meet
+without a corner are tangent.
+
+| Input | Type hint | Access | Default | Meaning |
+|---|---|---|---|---|
+| `C` | Curve | list | – | Curves to rebuild |
+| `T` | float | item | document tolerance | Tolerance at the input vertices |
+| `A` | float | item | 45 | Corner angle in degrees (1-179). Regular polygons with at most 360/A sides stay polygons (8 at 45°) |
+
+| Output | Meaning |
+|---|---|
+| `C` | Rebuilt curves, one per input |
+
+## pkFootprint
+
+Nickname `pkFootprint`. Outline of the union of many breps, meshes, SubDs and
+extrusions seen along a plane: one closed curve per island and per hole, no
+inner lines, exact arcs and circles where the geometry is round. Tiny gaps up
+to the gap tolerance are closed.
+
+| Input | Type hint | Access | Default | Meaning |
+|---|---|---|---|---|
+| `G` | GeometryBase | list | – | Breps, meshes, SubDs, extrusions |
+| `P` | Plane | item | World XY | Projection plane |
+| `A` | float | item | 0 | MinArea: loops with a smaller area are dropped |
+| `T` | float | item | 3x document tolerance | Gap tolerance |
+
+| Output | Meaning |
+|---|---|
+| `C` | Closed footprint curves (islands and holes) |
+| `O` | Curves that could not be closed (warning when not empty) |

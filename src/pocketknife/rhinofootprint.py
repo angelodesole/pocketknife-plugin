@@ -230,6 +230,7 @@ def footprint(
         180.0,
         join_tol=gap_tol,
         split_touches=True,
+        drop_thin=True,
     )
     curves = list(result.curves)
     curves += [_true_arc(segments[i], plane, tol) for i in result.unchanged]

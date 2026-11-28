@@ -168,6 +168,62 @@ def drop_slivers(segments: Sequence[Segment], tol: float) -> list[Segment]:
     return [s for s in segments if s.length > tol]
 
 
+def _midpoint(s: Segment) -> Point2:
+    if s.kind == ARC:
+        angle = s.start_angle + 0.5 * s.sweep
+        return (
+            s.center[0] + s.radius * math.cos(angle),
+            s.center[1] + s.radius * math.sin(angle),
+        )
+    return (0.5 * (s.start[0] + s.end[0]), 0.5 * (s.start[1] + s.end[1]))
+
+
+def drop_thin_pairs(
+    segments: Sequence[Segment], tol: float
+) -> tuple[list[Segment], int]:
+    """Removes pairs of segments that bound a slit narrower than the tolerance.
+
+    Endpoints are fused into nodes as in ``build_chains``. Two line or arc
+    segments joining the same two nodes whose midpoints are within ``tol``
+    are the two walls of a slit (two outlines closer than ``tol``): both are
+    removed, so the outlines on either side merge. ``FREE`` segments are
+    never removed.
+
+    Args:
+        segments: Segments, already free of overlaps.
+        tol: Distance used to fuse endpoints and to compare midpoints.
+
+    Returns:
+        ``(segments, dropped)``: the remaining segments, in order, and the
+        number of segments removed.
+    """
+    points = [p for s in segments for p in (s.start, s.end)]
+    node_ids = fuse_endpoints(points, tol)
+    by_nodes: dict[tuple[int, int], list[int]] = {}
+    for i, s in enumerate(segments):
+        a, b = node_ids[2 * i], node_ids[2 * i + 1]
+        if s.kind != FREE and a != b:
+            by_nodes.setdefault((min(a, b), max(a, b)), []).append(i)
+    dead: set[int] = set()
+    for members in by_nodes.values():
+        if len(members) < 2:
+            continue
+        mids = {i: _midpoint(segments[i]) for i in members}
+        pairs = sorted(
+            (_dist(mids[i], mids[j]), i, j)
+            for k, i in enumerate(members)
+            for j in members[k + 1 :]
+        )
+        for d, i, j in pairs:
+            if d > tol:
+                break
+            if i in dead or j in dead:
+                continue
+            dead.update((i, j))
+    kept = [s for i, s in enumerate(segments) if i not in dead]
+    return kept, len(dead)
+
+
 def fuse_endpoints(points: Sequence[Point2], tol: float) -> list[int]:
     """Groups points closer than the tolerance into nodes, without chaining.
 

@@ -25,8 +25,8 @@ loses regions on coincident edges and shared walls.
 - Holes are real: a courtyard gives an inner closed curve.
 - Buildings that touch or overlap merge into one region. Breaks in the
   outline narrower than `GapTolerance` (endpoint to endpoint, the numerical
-  noise of the engine) are joined. `GapTolerance` does not merge two
-  buildings separated by a thin strip: see Calls.
+  noise of the engine) are joined, and a slit narrower than `GapTolerance`
+  between two aligned buildings is closed: see Calls.
 - `MinArea`: islands and holes whose enclosed area is below it are dropped
   (user's choice, option 2): no tiny pieces that fall out of the sheet, no
   tiny holes the laser cannot cut. Removal is by whole loops, so the
@@ -85,12 +85,19 @@ loses regions on coincident edges and shared walls.
   `curvegraph.py` / `rhinocurves.py`, shared with pkCleanCurves: the change is
   additive and covered by new pytest cases; the existing tests must pass
   unchanged.
-- **Thin strips stay.** Two buildings whose walls are closer than
-  `GapTolerance` but not touching (a real slit, e.g. 0.02 with tol 0.01) stay
-  two loops: the engine gives two separate outlines and only ends are
-  joined. Merging them would mean bridging parallel edges, which moves
-  geometry (the rejected option 3). Overlap removal stays at model tolerance,
-  so the two parallel edges are never mistaken for one.
+- **Slits narrower than `GapTolerance` close** (revised 2026-11-28 after the
+  Rhino test; first written as "thin strips stay"). Two buildings whose
+  facing walls are closer than `GapTolerance` (e.g. 0.02 with tol 0.01) have
+  their corners fused into common nodes by the join, so the outer outline
+  already runs across the slit; the two facing walls were left as a
+  degenerate two-segment loop and reported as open. They are now removed
+  as a pair (`curvegraph.drop_thin_pairs`, option `drop_thin` of
+  `clean_curves`): two line or arc segments joining the same two nodes with
+  midpoints within `GapTolerance` cancel, and the buildings merge into one
+  region. For the laser this is the useful result (such a slit cannot be
+  cut), and no vertex moves beyond the endpoint snap. Limit: walls of
+  different lengths (staggered buildings) do not share both nodes and are
+  not cancelled; the curves stay open and are reported.
 - **Corner-to-corner touch gives two loops.** Two buildings touching at a
   single point give two closed loops sharing that point, never one
   self-touching curve: each loop stays a simple closed curve (cleaner for the
@@ -245,7 +252,7 @@ Rhino checklist (for the user):
 1. A real masterplan (meshes from a city model, or the user's own breps):
    one closed curve per block, courtyards as holes, no inner lines.
 2. Buildings sharing walls and buildings 0.005 apart: one region each.
-   Buildings 2x tol apart: two loops. Two buildings touching at a corner:
+   Buildings 2x tol apart: one region. Two buildings touching at a corner:
    two loops sharing the point.
 3. A round tower: an exact circle (`ArcCurve`).
 4. `MinArea` on a model with small courtyards and kiosks: they disappear,

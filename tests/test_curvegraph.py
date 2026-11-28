@@ -16,6 +16,7 @@ from pocketknife.curvegraph import (
     build_chains,
     compact_chain,
     drop_slivers,
+    drop_thin_pairs,
     fuse_endpoints,
     line_segment,
     remove_overlaps,
@@ -543,3 +544,29 @@ def test_build_chains_tol_decides_a_small_break():
     broken = segments[:-1] + [line_segment(end.start, (0.0, 0.002))]
     assert [c.closed for c in build_chains(broken, TOL, math.pi)].count(True) == 0
     assert [c.closed for c in build_chains(broken, 0.003, math.pi)] == [True]
+
+
+def test_drop_thin_pairs_closes_a_slit():
+    # Two squares 2*TOL apart: corners fuse at 3*TOL, the facing walls cancel.
+    a = square(0, 0, 10)
+    b = square(10 + 2 * TOL, 0, 10)
+    kept, dropped = drop_thin_pairs(a + b, 3 * TOL)
+    assert dropped == 2
+    assert len(kept) == 6
+    chains = build_chains(kept, 3 * TOL, math.pi, split_touches=True)
+    assert len(chains) == 1 and chains[0].closed and len(chains[0].items) == 6
+
+
+def test_drop_thin_pairs_keeps_distinct_paths():
+    # Two different paths between the same two nodes, far apart: both stay.
+    pts = [(0, 0), (10, 0)]
+    top = [line_segment((0, 0), (5, 5)), line_segment((5, 5), (10, 0))]
+    straight = [line_segment(pts[0], pts[1])]
+    kept, dropped = drop_thin_pairs(top + straight, 3 * TOL)
+    assert dropped == 0 and len(kept) == 3
+
+
+def test_drop_thin_pairs_off_at_model_tol_for_clean_network():
+    segments = square(0, 0, 10) + square(20, 0, 10)
+    kept, dropped = drop_thin_pairs(segments, TOL)
+    assert dropped == 0 and kept == segments

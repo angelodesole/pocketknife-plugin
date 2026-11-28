@@ -22,6 +22,7 @@ from pocketknife.curvegraph import (
     build_chains,
     compact_chain,
     drop_slivers,
+    drop_thin_pairs,
     line_segment,
     remove_overlaps,
 )
@@ -382,6 +383,7 @@ def clean_curves(
     *,
     join_tol: float | None = None,
     split_touches: bool = False,
+    drop_thin: bool = False,
 ) -> CleanResult:
     """Cleans a network of planar curves (see the module docstring).
 
@@ -396,6 +398,9 @@ def clean_curves(
             keep using ``tol``.
         split_touches: If True, chains also split where a curve touches
             another (see ``build_chains``).
+        drop_thin: If True, pairs of segments bounding a slit narrower than
+            ``join_tol`` are removed, so the outlines on either side merge
+            (see ``drop_thin_pairs``).
 
     Returns:
         The cleaning result.
@@ -418,6 +423,9 @@ def clean_curves(
         segments = drop_slivers(segments, tol)
         segments, count = remove_overlaps(segments, tol)
         removed_total += removed + count
+        if drop_thin:
+            segments, thin = drop_thin_pairs(segments, join_tol)
+            removed_total += thin
         touched |= {s.source for s in (before - Counter(segments))}
         touched |= {s.source for s in (Counter(segments) - before)}
         for chain in build_chains(

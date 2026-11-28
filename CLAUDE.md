@@ -61,7 +61,7 @@ Do this only after the user approves the prototype in Rhino:
 | `pkCleanCurves` | `sandbox/pkCleanCurves.py`, GH `grasshopper/pkCleanCurves.py` | `specs/2026-11-25-pkCleanCurves-design.md`, `plans/2026-11-25-pkCleanCurves.md` | Rhino checks passed via MCP (2026-11-28); awaiting the user's approval |
 | `pkClipCurves` | `sandbox/pkClipCurves.py`, GH `grasshopper/pkClipCurves.py` | `specs/2026-11-27-pkClipCurves-design.md`, `plans/2026-11-27-pkClipCurves.md` | Rhino checks passed via MCP (2026-11-28; Undo not checked); awaiting the user's approval |
 | `pkRebuildCurves` | `sandbox/pkRebuildCurves.py`, GH `grasshopper/pkRebuildCurves.py` | `specs/2026-11-27-pkRebuildCurves-design.md`, `plans/2026-11-28-pkRebuildCurves.md` | Rhino checks passed via MCP (2026-11-28); awaiting the user's approval |
-| `pkFootprint` | `sandbox/pkFootprint.py`, GH `grasshopper/pkFootprint.py` | `specs/2026-11-28-pkFootprint-design.md`, `plans/2026-11-28-pkFootprint.md` | Awaiting the Rhino test |
+| `pkFootprint` | `sandbox/pkFootprint.py`, GH `grasshopper/pkFootprint.py` | `specs/2026-11-28-pkFootprint-design.md`, `plans/2026-11-28-pkFootprint.md` | Rhino checks passed via MCP (2026-11-28) |
 | Read/Write CSV | — | — | Dropped (LunchBox is enough) |
 
 ### What each command does
@@ -119,7 +119,7 @@ Do this only after the user approves the prototype in Rhino:
   1. A real masterplan: one closed curve per block, courtyards as holes,
      no inner lines.
   2. Buildings sharing walls and buildings 0.005 apart: one region each;
-     2x tol apart: two loops; touching at a corner: two loops sharing the
+     2x tol apart: one region; touching at a corner: two loops sharing the
      point.
   3. A round tower: an exact circle (`ArcCurve`).
   4. `MinArea` on small courtyards and kiosks: they disappear, nothing
@@ -146,7 +146,11 @@ Do this only after the user approves the prototype in Rhino:
   - items rejected by `AddGeometry` are not counted as skipped;
   - "No supported objects." is also printed when no silhouettes come out;
   - mesh outlines come out as degree-1 NurbsCurve rather than PolylineCurve;
-  - GH InstanceReferenceGeometry inputs are skipped.
+  - GH InstanceReferenceGeometry inputs are skipped;
+  - a slit narrower than GapTolerance closes only when the facing walls share
+    both end nodes (aligned buildings); staggered walls stay open and are
+    reported;
+  - 3840 objects take about 3.8 s (synthetic masterplan, 2026-11-28).
 
 ### Ideas not started
 

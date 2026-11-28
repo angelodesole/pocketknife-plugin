@@ -18,6 +18,10 @@ embedded in Rhino 8).
 | [`pkMinBoundingBox`](docs/commands/pkMinBoundingBox.md) | Minimum-volume oriented bounding box. | ✓ |
 | [`pkMinBoundingRect`](docs/commands/pkMinBoundingRect.md) | Minimum-area bounding rectangle on XY. | ✓ |
 | [`pkOrientToMinRect`](docs/commands/pkOrientToMinRect.md) | Rotate objects so their min rectangle aligns to X or Y. | ✓ |
+| [`pkCleanCurves`](docs/commands/pkCleanCurves.md) | Clean messy curve networks (Make2D): no duplicates, straight joins. | ✓ |
+| [`pkClipCurves`](docs/commands/pkClipCurves.md) | Clip curves with mask shapes, keeping the inside or the outside. | ✓ |
+| [`pkRebuildCurves`](docs/commands/pkRebuildCurves.md) | Rebuild faceted curves into lines, true arcs and minimal NURBS. | ✓ |
+| [`pkFootprint`](docs/commands/pkFootprint.md) | Closed union outline of many objects on a plane, with real holes. | ✓ |
 
 ## Install
 

@@ -6,7 +6,7 @@ Writes two files in ``project/``:
 * ``pocketknife.gh``: one Python 3 Script component per file in
   ``grasshopper/``, with the nickname, inputs (type hint, access) and outputs
   listed in ``COMPONENTS`` (the same as ``grasshopper/README.md``).
-* ``pocketknife.rhproj``: the project, with the six commands in ``commands/``,
+* ``pocketknife.rhproj``: the project, with the ten commands in ``commands/``,
   the Grasshopper components from ``pocketknife.gh``, the ``pocketknife``
   library from ``src/`` and the SVG icons from ``icons/svg/``.
 
@@ -40,7 +40,8 @@ PROJECT_ID = "9e3c1f4a-6b2d-4c8e-a5f7-3d1b9e0c7a42"
 PROJECT_NAME = "PocketKnife"
 DESCRIPTION = (
     "Pocket Knife: free, open-source Rhino 8 commands and Grasshopper "
-    "components (layers, inner points, minimum bounding boxes and rectangles)."
+    "components (layers, inner points, minimum bounding boxes and "
+    "rectangles, curve cleaning, clipping and rebuilding, footprints)."
 )
 AUTHOR = "Angelo"
 # RhinoCode needs an email for the author; the GitHub no-reply address keeps
@@ -59,6 +60,10 @@ COMMANDS = (
     "pkMinBoundingBox",
     "pkMinBoundingRect",
     "pkOrientToMinRect",
+    "pkCleanCurves",
+    "pkClipCurves",
+    "pkRebuildCurves",
+    "pkFootprint",
 )
 
 # name: (instance id, nickname, description, inputs, outputs).
@@ -163,6 +168,85 @@ COMPONENTS = {
         (
             ("O", "Rotated geometry"),
             ("X", "Transformations (to apply to other geometry too)"),
+        ),
+    ),
+    "pkCleanCurves": (
+        "52350fcf-7a9c-4a43-bdfd-977da5a4c4db",
+        "pkCleanCrv",
+        "Cleans a network of planar curves: overlaps drawn once, straight "
+        "joins, collinear lines and co-circular arcs merged.",
+        (
+            ("C", "Curve", "list", True, "Curves to clean"),
+            (
+                "A",
+                "double",
+                "item",
+                False,
+                "Max deviation from straight at junctions, degrees (0-90)",
+            ),
+        ),
+        (("C", "Clean curves"),),
+    ),
+    "pkClipCurves": (
+        "084ca9e7-1251-4d4c-8a25-b96557a4bf40",
+        "pkClip",
+        "Clips curves with mask shapes (even-odd rule); stretches on a mask "
+        "boundary are dropped.",
+        (
+            ("C", "Curve", "list", True, "Curves to clip"),
+            (
+                "M",
+                "GeometryBase",
+                "list",
+                True,
+                "Mask shapes: closed planar curves or hatches, on one plane",
+            ),
+            ("O", "bool", "item", False, "True: keep outside. False: keep inside"),
+        ),
+        (
+            ("I", "Kept pieces"),
+            ("X", "Index in C of the curve each piece comes from"),
+        ),
+    ),
+    "pkRebuildCurves": (
+        "3d6f1346-5157-48ad-a47e-902e77c12c69",
+        "pkRebuildCrv",
+        "Rebuilds faceted or over-dense curves into lines, arcs/circles and "
+        "minimal NURBS, keeping true corners.",
+        (
+            ("C", "Curve", "list", True, "Curves to rebuild"),
+            ("T", "double", "item", False, "Tolerance at the input vertices"),
+            (
+                "A",
+                "double",
+                "item",
+                False,
+                "Corner angle in degrees (1-179); polygons with at most "
+                "360/A sides stay polygons",
+            ),
+        ),
+        (("C", "Rebuilt curves, one per input"),),
+    ),
+    "pkFootprint": (
+        "c093c6ef-409e-4c26-b4f4-e74c275ead47",
+        "pkFootprint",
+        "Closed outline of the union of breps, meshes and SubDs on a plane, "
+        "with real holes.",
+        (
+            ("G", "GeometryBase", "list", True, "Breps, meshes, SubDs, extrusions"),
+            ("P", "Plane", "item", False, "Projection plane (World XY by default)"),
+            (
+                "A",
+                "double",
+                "item",
+                False,
+                "MinArea: loops with a smaller area are dropped",
+            ),
+            ("T", "double", "item", False, "Gap tolerance (3x document tolerance)"),
+        ),
+        (
+            ("C", "Closed footprint curves (islands and holes)"),
+            ("O", "Curves that could not be closed (warning when not empty)"),
         ),
     ),
 }

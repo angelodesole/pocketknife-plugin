@@ -163,6 +163,90 @@ def icon_orient_to_min_rect(t: dict) -> str:
     return _svg(ghost + final + arrow + axis)
 
 
+def icon_clean_curves(t: dict) -> str:
+    """Broken, doubled strokes on the left; one clean joined curve on the right."""
+    soft = t["soft"]
+    messy = "".join(
+        f'<path d="{d}" fill="none" stroke="{soft}" stroke-width="1" '
+        'stroke-linecap="round"/>'
+        for d in (
+            "M2.5 18 L6 12.5",
+            "M5.2 13.6 L8.6 8.2",
+            "M2.8 17.4 L5.6 13",
+            "M8.2 8.8 L11 4.5",
+        )
+    )
+    clean = (
+        f'<path d="M12.5 19.5 L16.5 13 L21.5 13 M16.5 13 L19 4.5" fill="none" '
+        f'stroke="{BLUE}" stroke-width="1.6" stroke-linejoin="round" '
+        'stroke-linecap="round"/>'
+    )
+    nodes = "".join(
+        f'<circle cx="{x}" cy="{y}" r="1.2" fill="{BLUE}"/>'
+        for x, y in ((12.5, 19.5), (21.5, 13), (19, 4.5))
+    )
+    return _svg(messy + clean + nodes)
+
+
+def icon_clip_curves(t: dict) -> str:
+    """Curves crossing a mask: kept inside in color, dropped outside."""
+    line, fill, soft = t["line"], t["fill"], t["soft"]
+    mask = (
+        f'<rect x="5" y="5" width="14" height="14" rx="1" fill="{fill}" '
+        f'stroke="{line}" {STROKE}/>'
+    )
+    outside = "".join(
+        f'<path d="{d}" fill="none" stroke="{soft}" stroke-width="1" '
+        'stroke-dasharray="1.6 1.2" stroke-linecap="round"/>'
+        for d in ("M1.5 9 L5 9 M19 9 L22.5 9", "M1.5 16.5 L5 15.4 M19 11.2 L22.5 10")
+    )
+    inside = (
+        f'<path d="M5 9 L19 9 M5 15.4 L19 11.2" fill="none" stroke="{BLUE}" '
+        'stroke-width="1.6" stroke-linecap="round"/>'
+    )
+    return _svg(mask + outside + inside)
+
+
+def icon_rebuild_curves(t: dict) -> str:
+    """A faceted arc (ghost) and the true arc rebuilt over it."""
+    line, soft = t["line"], t["soft"]
+    facets = (
+        f'<polyline points="3,20 4.2,14.2 7.4,9.2 12,6.2 17.4,5.3" fill="none" '
+        f'stroke="{soft}" stroke-width="1" stroke-linejoin="round"/>'
+    )
+    vertices = "".join(
+        f'<circle cx="{x}" cy="{y}" r="1" fill="{soft}"/>'
+        for x, y in ((4.2, 14.2), (7.4, 9.2), (12, 6.2))
+    )
+    arc = (
+        f'<path d="M3 20 A17 17 0 0 1 17.4 5.3 L21.5 5.3" fill="none" '
+        f'stroke="{BLUE}" stroke-width="1.6" stroke-linecap="round"/>'
+    )
+    ends = "".join(
+        f'<circle cx="{x}" cy="{y}" r="1.3" fill="{BLUE}" stroke="{line}" '
+        'stroke-width="0.75"/>'
+        for x, y in ((3, 20), (21.5, 5.3))
+    )
+    return _svg(facets + vertices + arc + ends)
+
+
+def icon_footprint(t: dict) -> str:
+    """Overlapping blocks seen from above and their union outline with a hole."""
+    fill, soft = t["fill"], t["soft"]
+    blocks = "".join(
+        f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{fill}" '
+        f'stroke="{soft}" stroke-width="0.75"/>'
+        for x, y, w, h in ((2.5, 2.5, 12, 10), (8, 8, 13.5, 13.5))
+    )
+    outline = (
+        '<path d="M2.5 2.5 H14.5 V8 H21.5 V21.5 H8 V12.5 H2.5 Z" fill="none" '
+        f'stroke="{BLUE}" stroke-width="1.6" stroke-linejoin="round"/>'
+        f'<rect x="12.5" y="13" width="5" height="4.5" fill="none" stroke="{BLUE}" '
+        'stroke-width="1.6" stroke-linejoin="round"/>'
+    )
+    return _svg(blocks + outline)
+
+
 COMMAND_ICONS = {
     "pkLayerColorFromMaterial": icon_layer_color_from_material,
     "pkCopyToLayerCopy": icon_copy_to_layer_copy,
@@ -170,6 +254,10 @@ COMMAND_ICONS = {
     "pkMinBoundingBox": icon_min_bounding_box,
     "pkMinBoundingRect": icon_min_bounding_rect,
     "pkOrientToMinRect": icon_orient_to_min_rect,
+    "pkCleanCurves": icon_clean_curves,
+    "pkClipCurves": icon_clip_curves,
+    "pkRebuildCurves": icon_rebuild_curves,
+    "pkFootprint": icon_footprint,
 }
 
 

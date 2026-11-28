@@ -61,7 +61,7 @@ Do this only after the user approves the prototype in Rhino:
 | `pkCleanCurves` | `sandbox/pkCleanCurves.py`, GH `grasshopper/pkCleanCurves.py` | `specs/2026-11-25-pkCleanCurves-design.md`, `plans/2026-11-25-pkCleanCurves.md` | Rhino checks passed via MCP (2026-11-28); awaiting the user's approval |
 | `pkClipCurves` | `sandbox/pkClipCurves.py`, GH `grasshopper/pkClipCurves.py` | `specs/2026-11-27-pkClipCurves-design.md`, `plans/2026-11-27-pkClipCurves.md` | Rhino checks passed via MCP (2026-11-28; Undo not checked); awaiting the user's approval |
 | `pkRebuildCurves` | `sandbox/pkRebuildCurves.py`, GH `grasshopper/pkRebuildCurves.py` | `specs/2026-11-27-pkRebuildCurves-design.md`, `plans/2026-11-28-pkRebuildCurves.md` | Rhino checks passed via MCP (2026-11-28); awaiting the user's approval |
-| `pkFootprint` | spike `sandbox/spike_pkFootprint.py` (throwaway) | none yet | Spike works (results below); next: design doc |
+| `pkFootprint` | `sandbox/pkFootprint.py`, GH `grasshopper/pkFootprint.py` | `specs/2026-11-28-pkFootprint-design.md`, `plans/2026-11-28-pkFootprint.md` | Awaiting the Rhino test |
 | Read/Write CSV | — | — | Dropped (LunchBox is enough) |
 
 ### What each command does

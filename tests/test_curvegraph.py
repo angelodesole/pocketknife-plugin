@@ -437,3 +437,86 @@ def test_split_off_keeps_todays_result():
         segments, TOL, MAX_ANGLE, split_touches=False
     )
     assert len(build_chains(segments, TOL, math.pi)) == 1
+
+
+def oriented_ends(segments, chain):
+    """Returns the (start, end) points of each chain item, in chain order."""
+    ends = []
+    for index, rev in chain.items:
+        s = segments[index]
+        ends.append((s.end, s.start) if rev else (s.start, s.end))
+    return ends
+
+
+def assert_valid_chains(segments, chains):
+    """Checks continuity of every chain, closure of closed ones, and coverage."""
+    for chain in chains:
+        ends = oriented_ends(segments, chain)
+        for (_, a), (b, _) in zip(ends, ends[1:]):
+            assert math.dist(a, b) <= TOL
+        if chain.closed:
+            assert math.dist(ends[-1][1], ends[0][0]) <= TOL
+    used = sorted(i for c in chains for i, _ in c.items)
+    assert used == list(range(len(segments)))
+
+
+def test_split_results_are_continuous_and_closed():
+    cases = [
+        square(-1, -1, 1) + square(0, 0, 1),
+        square(-5, -5, 10) + square(-1, -1, 1, ccw=False) + square(0, 0, 1, ccw=False),
+        square(-1, -1, 1) + square(0, 0, 1, ccw=False),
+    ]
+    for segments in cases:
+        chains = build_chains(segments, TOL, math.pi, split_touches=True)
+        assert all(c.closed for c in chains)
+        assert_valid_chains(segments, chains)
+
+
+def test_split_lollipop_gives_open_chain_and_loop():
+    stick_in = line_segment((-1, 0), (0, 0))
+    stick_out = line_segment((0, 0), (0, -1))
+    segments = [stick_in] + square(0, 0, 1) + [stick_out]
+    whole = build_chains(segments, TOL, math.pi)
+    assert len(whole) == 1 and not whole[0].closed
+    chains = build_chains(segments, TOL, math.pi, split_touches=True)
+    assert [c.closed for c in chains] == [False, True]
+    assert sorted(i for i, _ in chains[0].items) == [0, 5]
+    assert sorted(i for i, _ in chains[1].items) == [1, 2, 3, 4]
+    assert_valid_chains(segments, chains)
+
+
+def test_split_three_visits_to_one_node():
+    tri = [(0, 0), (-1, 1), (-1.5, 0.5)]
+    triangle = [line_segment(a, b) for a, b in zip(tri, tri[1:] + tri[:1])]
+    segments = square(-1, -1, 1) + square(0, 0, 1) + triangle
+    chains = build_chains(segments, TOL, math.pi, split_touches=True)
+    assert all(c.closed for c in chains)
+    assert loops(chains) == [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10]]
+    assert_valid_chains(segments, chains)
+
+
+def test_split_nested_loops_in_open_chain():
+    tri = [(0, 0), (1, 0.5), (0.5, 1)]
+    inner = [line_segment(a, b) for a, b in zip(tri, tri[1:] + tri[:1])]
+    segments = (
+        [line_segment((-1, 0), (0, 0))]
+        + square(0, 0, 2)
+        + inner
+        + [line_segment((0, 0), (0, -1))]
+    )
+    chains = build_chains(segments, TOL, math.pi, split_touches=True)
+    assert_valid_chains(segments, chains)
+    assert sorted(c.closed for c in chains) == [False, True, True]
+    assert loops(chains) == [[0, 8], [1, 2, 3, 4], [5, 6, 7]]
+
+
+def test_split_open_chain_with_self_loop_segment():
+    circle = arc_segment((0, 1), 1, -math.pi / 2, 2 * math.pi)
+    segments = [
+        line_segment((-1, 0), (0, 0)),
+        line_segment((0, 0), (1, 0)),
+        circle,
+    ]
+    chains = build_chains(segments, TOL, math.pi, split_touches=True)
+    assert sorted(c.closed for c in chains) == [False, True]
+    assert_valid_chains(segments, chains)

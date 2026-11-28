@@ -412,9 +412,7 @@ def test_split_corner_touch_gives_two_loops():
 
 def test_split_holes_touching_gives_three_loops():
     segments = (
-        square(-5, -5, 10)
-        + square(-1, -1, 1, ccw=False)
-        + square(0, 0, 1, ccw=False)
+        square(-5, -5, 10) + square(-1, -1, 1, ccw=False) + square(0, 0, 1, ccw=False)
     )
     chains = build_chains(segments, TOL, math.pi, split_touches=True)
     assert all(c.closed for c in chains)

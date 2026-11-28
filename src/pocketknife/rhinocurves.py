@@ -143,9 +143,7 @@ def _to_segments(
         start = _uv(plane, piece.PointAtStart)
         start_angle = math.atan2(start[1] - center[1], start[0] - center[0])
         sign = 1.0 if arc.Plane.ZAxis * plane.ZAxis > 0 else -1.0
-        segment = arc_segment(
-            center, arc.Radius, start_angle, sign * arc.Angle, source
-        )
+        segment = arc_segment(center, arc.Radius, start_angle, sign * arc.Angle, source)
         end = _uv(plane, piece.PointAtEnd)
         if math.hypot(segment.end[0] - end[0], segment.end[1] - end[1]) <= tol:
             return [segment]

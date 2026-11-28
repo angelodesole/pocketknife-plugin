@@ -35,7 +35,7 @@ def _span_vertices(span: rg.Curve, tol: float) -> list:
         return [_tuple(span.PointAtStart), _tuple(span.PointAtEnd)]
     ok, arc = span.TryGetArc(tol)
     if ok:
-        count = max(4, int(math.ceil(arc.AngleRadians / ARC_FACET)))
+        count = max(4, int(math.ceil(arc.Angle / ARC_FACET)))
         params = span.DivideByCount(count, True)
         if params:
             return [_tuple(span.PointAt(t)) for t in params] + [_tuple(span.PointAtEnd)]

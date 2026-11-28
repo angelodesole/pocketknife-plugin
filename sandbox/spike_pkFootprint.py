@@ -55,7 +55,7 @@ def hld_geometry(obj):
 
 def parallel_viewport(plane, bbox):
     """Parallel viewport looking at the plane along its normal (-Z)."""
-    vp = rg.ViewportInfo()
+    vp = Rhino.DocObjects.ViewportInfo()
     vp.ChangeToParallelProjection(True)
     center = bbox.Center
     distance = max(bbox.Diagonal.Length, 1.0) * 2.0

@@ -143,7 +143,7 @@ def _to_segments(
         start_angle = math.atan2(start[1] - center[1], start[0] - center[0])
         sign = 1.0 if arc.Plane.ZAxis * plane.ZAxis > 0 else -1.0
         segment = arc_segment(
-            center, arc.Radius, start_angle, sign * arc.AngleRadians, source
+            center, arc.Radius, start_angle, sign * arc.Angle, source
         )
         end = _uv(plane, piece.PointAtEnd)
         if math.hypot(segment.end[0] - end[0], segment.end[1] - end[1]) <= tol:
@@ -317,7 +317,7 @@ def _assemble(
             polyline.Add(point)
         curve = rg.PolylineCurve(polyline)
         return curve if curve.IsValid else None
-    curve = rg.PolyCurve()
+    pieces = []
     for k, s in enumerate(parts):
         start, end = points[k], points[k + 1]
         if s.kind == LINE:
@@ -326,7 +326,15 @@ def _assemble(
             piece = _arc_curve(plane, s, start, end)
         else:
             piece = _free_curve(free_curves, s, start, end)
-        if piece is None or not piece.IsValid or not curve.Append(piece):
+        if piece is None or not piece.IsValid:
+            return None
+        pieces.append(piece)
+    if len(pieces) == 1:
+        # A lone arc or free curve stays a plain curve, not a polycurve.
+        return pieces[0]
+    curve = rg.PolyCurve()
+    for piece in pieces:
+        if not curve.Append(piece):
             return None
     return curve if curve.IsValid else None
 

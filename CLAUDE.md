@@ -58,10 +58,10 @@ Do this only after the user approves the prototype in Rhino:
 
 | Command | Prototype | Design / plan | State |
 |---|---|---|---|
-| `pkCleanCurves` | `sandbox/pkCleanCurves.py`, GH `grasshopper/pkCleanCurves.py` | `specs/2026-11-25-pkCleanCurves-design.md`, `plans/2026-11-25-pkCleanCurves.md` | Awaiting the Rhino test |
-| `pkClipCurves` | `sandbox/pkClipCurves.py`, GH `grasshopper/pkClipCurves.py` | `specs/2026-11-27-pkClipCurves-design.md`, `plans/2026-11-27-pkClipCurves.md` | Awaiting the Rhino test |
-| `pkRebuildCurves` | `sandbox/pkRebuildCurves.py`, GH `grasshopper/pkRebuildCurves.py` | `specs/2026-11-27-pkRebuildCurves-design.md`, `plans/2026-11-28-pkRebuildCurves.md` | Awaiting the Rhino test |
-| `pkFootprint` | spike `sandbox/spike_pkFootprint.py` (throwaway) | none yet | Awaiting the spike output |
+| `pkCleanCurves` | `sandbox/pkCleanCurves.py`, GH `grasshopper/pkCleanCurves.py` | `specs/2026-11-25-pkCleanCurves-design.md`, `plans/2026-11-25-pkCleanCurves.md` | Rhino checks passed via MCP (2026-11-28); awaiting the user's approval |
+| `pkClipCurves` | `sandbox/pkClipCurves.py`, GH `grasshopper/pkClipCurves.py` | `specs/2026-11-27-pkClipCurves-design.md`, `plans/2026-11-27-pkClipCurves.md` | Rhino checks passed via MCP (2026-11-28; Undo not checked); awaiting the user's approval |
+| `pkRebuildCurves` | `sandbox/pkRebuildCurves.py`, GH `grasshopper/pkRebuildCurves.py` | `specs/2026-11-27-pkRebuildCurves-design.md`, `plans/2026-11-28-pkRebuildCurves.md` | Rhino checks passed via MCP (2026-11-28); awaiting the user's approval |
+| `pkFootprint` | spike `sandbox/spike_pkFootprint.py` (throwaway) | none yet | Spike works (results below); next: design doc |
 | Read/Write CSV | — | — | Dropped (LunchBox is enough) |
 
 ### What each command does
@@ -91,6 +91,13 @@ Do this only after the user approves the prototype in Rhino:
   segment fill statistics. Write the design from its output; if the
   approach fails, fall back to per-object `Silhouette.Compute` plus
   `Curve.CreateBooleanRegions` on clusters of nearby objects.
+  Spike result (2026-11-28, tol 0.01): 500 breps -> 1612 silhouette
+  segments, 0.9 s in total (HLD 0.76 s); CurveBooleanUnion of the exact
+  outlines takes 0.30 s. Holes, overlaps, mesh+brep and sub-tolerance gaps
+  are right, cylinders give exact circles (as NurbsCurve). HLD leaves gaps
+  of 1.3-3x tol at some junctions: joining at 3x tol closes all of them
+  (5x reopens two, the node cluster rule rejects them), so the design needs
+  a gap tolerance separate from the model tolerance.
 
 ### Rhino test checklists
 

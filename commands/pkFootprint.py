@@ -1,7 +1,7 @@
 #! python3
 """Draw the outline of the union of breps and meshes on a plane.
 
-Pocket Knife prototype: run with _RunPythonScript from the repository.
+Pocket Knife command. Also runnable from the repository with _RunPythonScript.
 The footprint of many objects seen from above (World XY or the construction
 plane): one closed curve per island and per real hole, exact lines, arcs and
 circles, tiny gaps closed by the gap tolerance.
@@ -10,13 +10,13 @@ circles, tiny gaps closed by the gap tolerance.
 import os
 import sys
 
-_SRC = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
-)
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
-for _name in [m for m in sys.modules if m.split(".")[0] == "pocketknife"]:
-    del sys.modules[_name]
+try:
+    import pocketknife  # noqa: F401  Installed with the plug-in.
+except ImportError:
+    # Development: run from the repository with _RunPythonScript.
+    sys.path.insert(
+        0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
+    )
 
 import Rhino
 import scriptcontext as sc

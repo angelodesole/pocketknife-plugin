@@ -5,8 +5,8 @@ repository into the plug-in. It references, with paths relative to this folder:
 
 | Project folder | Source |
 |---|---|
-| Commands | the six scripts in `../commands/` (icons from `../icons/svg/`) |
-| Components | the four Script components of `pocketknife.gh` (made from `../grasshopper/`) |
+| Commands | the ten scripts in `../commands/` (icons from `../icons/svg/`) |
+| Components | the eight Script components of `pocketknife.gh` (made from `../grasshopper/`) |
 | Libraries | the `pocketknife` package in `../src/pocketknife/` |
 
 Both `pocketknife.rhproj` and `pocketknife.gh` are generated: edit the

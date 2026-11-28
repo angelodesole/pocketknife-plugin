@@ -1,7 +1,7 @@
 #! python3
 """Clip curves with mask shapes, like a clipping mask (even-odd rule).
 
-Pocket Knife prototype: run with _RunPythonScript from the repository.
+Pocket Knife command. Also runnable from the repository with _RunPythonScript.
 Replaces Split + Delete by boundary. Curves are cut where they cross the
 mask boundaries; only the pieces inside (or outside) are kept. Stretches
 lying on a mask boundary are always dropped. Nested mask shapes are holes.
@@ -10,13 +10,13 @@ lying on a mask boundary are always dropped. Nested mask shapes are holes.
 import os
 import sys
 
-_SRC = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
-)
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
-for _name in [m for m in sys.modules if m.split(".")[0] == "pocketknife"]:
-    del sys.modules[_name]
+try:
+    import pocketknife  # noqa: F401  Installed with the plug-in.
+except ImportError:
+    # Development: run from the repository with _RunPythonScript.
+    sys.path.insert(
+        0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
+    )
 
 import Rhino
 import scriptcontext as sc

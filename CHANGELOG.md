@@ -20,6 +20,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning: [S
 - Grasshopper components (scripts, to be tested): `pkInnerPoint` with accuracy
   input, `pkMinBoundingBox`, `pkMinBoundingRect`, `pkOrientToMinRect`.
 
+- Curve commands (in `commands/`, documented in `docs/commands/`, with
+  Grasshopper components and icons): `pkCleanCurves`, `pkClipCurves`,
+  `pkRebuildCurves`, `pkFootprint`. Logic in `curvegraph`, `intervals`,
+  `polyfit` and `footprint`, Rhino side in `rhinocurves`, `rhinoclip`,
+  `rhinorebuild` and `rhinofootprint`.
+
 ### Fixed
 - `pkCopyToLayerCopy`: selected layers below another selected layer no longer split the copied tree.
 

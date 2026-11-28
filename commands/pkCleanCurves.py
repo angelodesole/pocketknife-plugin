@@ -1,7 +1,7 @@
 #! python3
 """Clean a messy curve network: no duplicates, continuous straight joins.
 
-Pocket Knife prototype: run with _RunPythonScript from the repository.
+Pocket Knife command. Also runnable from the repository with _RunPythonScript.
 Replaces the Make2D -> SelChain -> Join routine. Overlapping and duplicated
 stretches are drawn once; pieces are joined at their endpoints following the
 straightest continuation, so a grid becomes long X and Y curves and an
@@ -12,13 +12,13 @@ and co-circular arcs merge; the geometry never moves beyond the tolerance.
 import os
 import sys
 
-_SRC = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
-)
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
-for _name in [m for m in sys.modules if m.split(".")[0] == "pocketknife"]:
-    del sys.modules[_name]
+try:
+    import pocketknife  # noqa: F401  Installed with the plug-in.
+except ImportError:
+    # Development: run from the repository with _RunPythonScript.
+    sys.path.insert(
+        0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
+    )
 
 import Rhino
 import scriptcontext as sc

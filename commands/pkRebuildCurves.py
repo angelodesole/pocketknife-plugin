@@ -1,7 +1,7 @@
 #! python3
 """Rebuild faceted curves into lines, arcs/circles and minimal NURBS.
 
-Pocket Knife prototype: run with _RunPythonScript from the repository.
+Pocket Knife command. Also runnable from the repository with _RunPythonScript.
 For curves exported badly by Revit, SketchUp or Blender: true corners are
 kept, uniformly faceted runs become real arcs and circles, straight runs
 become lines, and the rest becomes smooth NURBS with the fewest control
@@ -11,13 +11,13 @@ points. Every input vertex stays within the tolerance.
 import os
 import sys
 
-_SRC = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
-)
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
-for _name in [m for m in sys.modules if m.split(".")[0] == "pocketknife"]:
-    del sys.modules[_name]
+try:
+    import pocketknife  # noqa: F401  Installed with the plug-in.
+except ImportError:
+    # Development: run from the repository with _RunPythonScript.
+    sys.path.insert(
+        0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
+    )
 
 from collections import Counter
 

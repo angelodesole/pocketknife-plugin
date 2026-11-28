@@ -54,14 +54,14 @@ Do this only after the user approves the prototype in Rhino:
 5. The user regenerates the project in Rhino (`tools/build_project.py`) and
    builds it (`tools/build_plugin.py`), as described in `project/README.md`.
 
-## Status (branch `claude/curve-csv-commands-1s3xxh`)
+## Status
 
-| Command | Prototype | Design / plan | State |
+| Command | Source | Design / plan | State |
 |---|---|---|---|
-| `pkCleanCurves` | `sandbox/pkCleanCurves.py`, GH `grasshopper/pkCleanCurves.py` | `specs/2026-11-25-pkCleanCurves-design.md`, `plans/2026-11-25-pkCleanCurves.md` | Rhino checks passed via MCP (2026-11-28); awaiting the user's approval |
-| `pkClipCurves` | `sandbox/pkClipCurves.py`, GH `grasshopper/pkClipCurves.py` | `specs/2026-11-27-pkClipCurves-design.md`, `plans/2026-11-27-pkClipCurves.md` | Rhino checks passed via MCP (2026-11-28; Undo not checked); awaiting the user's approval |
-| `pkRebuildCurves` | `sandbox/pkRebuildCurves.py`, GH `grasshopper/pkRebuildCurves.py` | `specs/2026-11-27-pkRebuildCurves-design.md`, `plans/2026-11-28-pkRebuildCurves.md` | Rhino checks passed via MCP (2026-11-28); awaiting the user's approval |
-| `pkFootprint` | `sandbox/pkFootprint.py`, GH `grasshopper/pkFootprint.py` | `specs/2026-11-28-pkFootprint-design.md`, `plans/2026-11-28-pkFootprint.md` | Rhino checks passed via MCP (2026-11-28) |
+| `pkCleanCurves` | `commands/pkCleanCurves.py`, GH `grasshopper/pkCleanCurves.py` | `specs/2026-11-25-pkCleanCurves-design.md`, `plans/2026-11-25-pkCleanCurves.md` | Promoted (2026-11-28); the user regenerates and builds the plug-in |
+| `pkClipCurves` | `commands/pkClipCurves.py`, GH `grasshopper/pkClipCurves.py` | `specs/2026-11-27-pkClipCurves-design.md`, `plans/2026-11-27-pkClipCurves.md` | Promoted (2026-11-28); the user regenerates and builds the plug-in |
+| `pkRebuildCurves` | `commands/pkRebuildCurves.py`, GH `grasshopper/pkRebuildCurves.py` | `specs/2026-11-27-pkRebuildCurves-design.md`, `plans/2026-11-28-pkRebuildCurves.md` | Promoted (2026-11-28); the user regenerates and builds the plug-in |
+| `pkFootprint` | `commands/pkFootprint.py`, GH `grasshopper/pkFootprint.py` | `specs/2026-11-28-pkFootprint-design.md`, `plans/2026-11-28-pkFootprint.md` | Promoted (2026-11-28); the user regenerates and builds the plug-in |
 | Read/Write CSV | — | — | Dropped (LunchBox is enough) |
 
 ### What each command does
@@ -134,6 +134,7 @@ Do this only after the user approves the prototype in Rhino:
 ### Known minor issues (deferred)
 
 - pkClipCurves:
+  - Undo not checked in Rhino (two interactive selections cannot be scripted);
   - the probe box test has no tolerance at the outer edge of a mask box;
   - an overlap split by a seam is counted twice in "on boundary";
   - the mask index scan is not sublinear.
